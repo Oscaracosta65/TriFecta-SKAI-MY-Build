@@ -9930,9 +9930,13 @@ $labelInput = implode(' - ', $parts);
         // --- Sanitize lengths (defensive; no schema changes) ---
         // label VARCHAR-ish: keep to ~190 chars to be index-safe
         if ($label !== '') { $label = mb_substr($label, 0, 190, 'UTF-8'); }
-        // top_combos_json TEXT-ish: keep reasonable (evidence is compact, but trim if huge)
+        // top_combos_json TEXT-ish: if the encoded blob exceeds 64 kB, null it out rather
+        // than byte-truncating.  mb_substr at a byte boundary splits valid UTF-8 sequences
+        // and always produces syntactically invalid JSON; every downstream json_decode call
+        // on such a row returns null, permanently losing all evidence/combo display data.
+        // Null is a safe value: callers already guard with !empty() or is_array() checks.
         if (!empty($evidenceJson) && mb_strlen($evidenceJson, '8bit') > 64000) {
-            $evidenceJson = mb_substr($evidenceJson, 0, 64000, '8bit');
+            $evidenceJson = null;
         }
 
         // Optional next_draw_date/next_draw_at - prefer POST, then DB meta, then config; else NULL

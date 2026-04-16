@@ -772,7 +772,17 @@ function mylottoexpertEnsureUserSavedNumbersPlayColumns($db)
 
 function mylottoexpertParseNumberCsv($csv, $allowZero = false)
 {
-    $raw = array_filter(explode(',', (string)$csv), 'strlen');
+    $csv = (string)$csv;
+    // Unwrap JSON-encoded arrays (e.g. "[10,20,30]") before CSV parsing.
+    // Without this, explode(',', '[10,20,30]') produces ['[10','20','30]'];
+    // intval('[10') = 0, silently dropping the first ball when allowZero=false.
+    if ($csv !== '' && $csv[0] === '[') {
+        $j = json_decode($csv, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($j)) {
+            $csv = implode(',', $j);
+        }
+    }
+    $raw = array_filter(explode(',', $csv), 'strlen');
     $out = array();
     foreach ($raw as $part) {
         $n = (int)trim((string)$part);
@@ -10598,11 +10608,11 @@ function buildLotteryLogoPath(string $stateName, string $gameName): array
  * @param array  $drawMap    Preloaded draw map keyed by "game_id|Y-m-d"
  * @param string $gameId     Lottery game ID
  * @param string $drawDate   Draw date (any strtotime-parsable string)
- * @param array  $predMain   Predicted main numbers (ints; zeros are ignored)
- * @param int    $predExtra  Predicted extra ball (0 = not set)
+ * @param array  $predMain   Predicted main numbers (ints; zeros are valid for daily games)
+ * @param int|null $predExtra  Predicted extra ball (null = not predicted; 0 = digit 0 predicted)
  * @return array { has_draw, drawMain, drawExtra, hits_main, hits_extra }
  */
-function scoreRunFromDrawMap($drawMap, $gameId, $drawDate, array $predMain, $predExtra = 0)
+function scoreRunFromDrawMap($drawMap, $gameId, $drawDate, array $predMain, $predExtra = null)
 {
     $empty = array('has_draw' => false, 'drawMain' => array(), 'drawExtra' => array(), 'hits_main' => 0, 'hits_extra' => 0);
     $ts = strtotime((string)$drawDate);
@@ -10649,10 +10659,12 @@ function scoreRunFromDrawMap($drawMap, $gameId, $drawDate, array $predMain, $pre
 
     // Count extra-ball hit
     $hitsExtra = 0;
-    $predExtra = (int)$predExtra;
-    // [FIX-DAILY-EXTRA-ZERO] Daily bonus / extra digits can legitimately be 0.
-    // Do not require > 0 here; instead accept a numeric extra when draw extras exist.
-    if ($predExtra !== null && $predExtra !== '' && !empty($drawExtra) && in_array((int)$predExtra, $drawExtra, true)) {
+    // [FIX-EXTRA-ZERO-SENTINEL] $predExtra = null means no extra ball was predicted.
+    // $predExtra = 0 means digit 0 was explicitly predicted (valid for daily games).
+    // The previous code cast $predExtra to (int) here, converting null to 0, which made
+    // the subsequent null-guard always pass and caused false extra-hit matches on draws
+    // where the bonus digit happened to be 0.
+    if ($predExtra !== null && !empty($drawExtra) && in_array((int)$predExtra, $drawExtra, true)) {
         $hitsExtra = 1;
     }
 
@@ -11292,9 +11304,12 @@ foreach ($groups as $groupKey => $g) {
                 function ($n) { return $n !== 0; }
             ));
         }
-        $predExtra = 0;
+        // null = no extra ball was predicted (distinct from digit 0, which is a valid daily bonus).
+        // The bare array_filter() below previously stripped 0, making digit-0 predictions
+        // indistinguishable from "not predicted" and causing false extra-hit matches.
+        $predExtra = null;
         if (isset($s->extra_ball_numbers) && $s->extra_ball_numbers !== '' && $s->extra_ball_numbers !== null) {
-            $tmp = array_values(array_filter(array_map('intval', explode(',', (string)$s->extra_ball_numbers))));
+            $tmp = array_values(array_filter(array_map('intval', explode(',', (string)$s->extra_ball_numbers)), function ($n) { return $n >= 0; }));
             if (!empty($tmp)) { $predExtra = (int)$tmp[0]; }
         }
 
