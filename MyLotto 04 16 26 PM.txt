@@ -8854,9 +8854,12 @@ h3.title { font-size: 1.5rem; }
 // queue so the template does not render the same messages a second time.
 $__mleMessages = $app->getMessageQueue(true);
 if (!empty($__mleMessages)): ?>
-<div class="mle-messages" role="alert" aria-live="assertive">
-<?php foreach ($__mleMessages as $__mleMsgItem): ?>
-  <div class="mle-message mle-message--<?php echo htmlspecialchars((string)($__mleMsgItem['type'] ?? 'message'), ENT_QUOTES, 'UTF-8'); ?>">
+<div class="mle-messages" role="status" aria-live="polite">
+<?php foreach ($__mleMessages as $__mleMsgItem):
+  $__mleMsgType = htmlspecialchars((string)($__mleMsgItem['type'] ?? 'message'), ENT_QUOTES, 'UTF-8');
+  $__mleIsUrgent = in_array($__mleMsgItem['type'] ?? 'message', array('error', 'warning'), true);
+?>
+  <div class="mle-message mle-message--<?php echo $__mleMsgType; ?>"<?php if ($__mleIsUrgent) { echo ' role="alert"'; } ?>>
     <?php echo htmlspecialchars((string)($__mleMsgItem['message'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>
   </div>
 <?php endforeach; ?>
