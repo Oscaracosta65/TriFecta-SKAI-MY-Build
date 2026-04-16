@@ -266,6 +266,74 @@ textarea{ min-height:92px; resize:vertical; }
 }
 
 @media (prefers-reduced-motion: reduce){ .le-btn, .le-input, .le-select{ transition:none !important; } }
+
+/* ------------------------------------------------------------------ */
+/* Saved Numbers Panel (Numbers to Play sets fetched from MyLottoExpert) */
+/* ------------------------------------------------------------------ */
+.le-saved-panel{
+  margin-top:14px;
+  border:1px solid var(--border-strong);
+  border-radius:var(--r16);
+  background:#fff;
+  padding:14px;
+}
+.le-saved-panel-head{
+  font-size:13px;
+  font-weight:900;
+  color:var(--deep-navy);
+  letter-spacing:.18px;
+  margin-bottom:10px;
+}
+.le-saved-cards{ display:flex; flex-direction:column; gap:8px; }
+.le-saved-card{
+  border:1px solid var(--border);
+  border-radius:var(--r12);
+  padding:10px 12px;
+  background:var(--sky-gray);
+  transition:border-color .12s;
+}
+.le-saved-card:hover{ border-color:rgba(28,102,255,.45); }
+.le-saved-card-top{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-bottom:5px;
+}
+.le-saved-card-label{ font-weight:800; font-size:13px; color:var(--deep-navy); }
+.le-saved-card-meta{ font-size:11px; color:var(--text-muted); margin-top:2px; }
+.le-saved-card-nums{
+  font-size:12px;
+  color:#334155;
+  line-height:1.55;
+  word-break:break-word;
+  margin-bottom:7px;
+}
+.le-saved-card-btn{
+  appearance:none;
+  border:1px solid rgba(28,102,255,.55);
+  border-radius:10px;
+  padding:5px 13px;
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+  background:#fff;
+  color:var(--skai-blue);
+  transition:background .12s, color .12s;
+  min-height:30px;
+}
+.le-saved-card-btn:hover{ background:var(--skai-blue); color:#fff; }
+.le-saved-card-btn:focus{ outline:3px solid rgba(28,102,255,.30); outline-offset:2px; }
+.le-saved-empty{ font-size:13px; color:var(--text-muted); }
+
+/* Over-quota: selected numbers shown orange when count exceeds wheel requirement */
+.le-num[aria-pressed="true"].le-num--over{
+  background:rgba(234,88,12,.14) !important;
+  border-color:rgba(234,88,12,.75) !important;
+  box-shadow:0 0 0 4px rgba(234,88,12,.14) !important;
+  color:#c2410c !important;
+}
 [[/style]]
 
 [[div class="le-hero"]]
@@ -283,7 +351,7 @@ textarea{ min-height:92px; resize:vertical; }
 [[div class="le-grid"]]
   [[div class="le-card"]]
     [[div class="le-label"]]Step 1: Load or select your pool[[/div]]
-    [[div class="le-help"]]Choose exactly the required pool size for this wheel. You can either select manually, paste a list, or import from MyLottoExpert when that connection is wired.[[/div]]
+    [[div class="le-help"]]When you arrive from your Numbers to Play section, your saved sets appear automatically below the grid. Click "Use these numbers" to pre-select them, then deselect any shown in orange until the count matches the wheel requirement. You can also pick numbers manually or use Random Select.[[/div]]
 
     [[div class="le-status" role="status" aria-live="polite"]]
       [[span class="le-dot" id="leDot" aria-hidden="true"]][[/span]]
@@ -320,6 +388,8 @@ textarea{ min-height:92px; resize:vertical; }
     [[/div]]
 
     [[div id="leGrid" class="le-number-grid" role="group" aria-label="Number selection grid"]][[/div]]
+
+    [[div id="leSavedSetsPanel" class="le-saved-panel" style="display:none;" aria-label="Your Numbers to Play"]][[/div]]
 
     [[div class="le-row" style="margin-top:12px"]]
       [[button id="leCreateBtn" class="le-btn" type="button" disabled]]Create Wheel[[/button]]
@@ -392,6 +462,7 @@ var dom = {
   req: document.getElementById('leReq'),
   selected: document.getElementById('leSelected'),
   grid: document.getElementById('leGrid'),
+  savedPanel: document.getElementById('leSavedSetsPanel'),
   outBody: document.getElementById('leOutTable') && document.getElementById('leOutTable').getElementsByTagName('tbody')[0],
   printSystemId: document.getElementById('lePrintSystemId'),
   printPick: document.getElementById('lePrintPick'),
@@ -408,9 +479,13 @@ var includeZero = false;
 var builtLines = [];
 var builtCombos = [];
 var copyResetTimer = null;
-// [[WHEEL_IMPORT]] Set to true by init() when URL contains play_set_endpoint + play_set_id.
-// Cleared and consumed by applyWheel() once the wheel system has finished loading.
-var __pendingAutoImport = false;
+// [[SAVED_SETS]] Endpoint for the MyLottoExpert play_sets_list JSON response.
+// Set by init() when play_sets_endpoint is present in the URL.
+// The panel is rendered automatically once the wheel system has loaded.
+var __playSetsEndpoint = null;
+// [[SAVED_SETS]] When a specific play_set_id is also in the URL, auto-apply
+// that set from the panel after the list is fetched.
+var __autoSelectPlaySetId = 0;
 
 function qs(name){
   try{
@@ -447,6 +522,10 @@ function flashCopiedState(){
 function pad2(n){
   n = parseInt(n,10) || 0;
   return n < 10 ? ('0' + n) : String(n);
+}
+
+function escHtml(s){
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function buildCopyText(){
@@ -537,11 +616,19 @@ function renderGrid(){
 }
 
 function syncGridPressed(){
+  var req = wheel ? (parseInt(wheel.requiredSelections, 10) || 0) : 0;
+  var over = (req > 0 && selected.length > req);
   var nodes = dom.grid ? dom.grid.querySelectorAll('.le-num') : [];
   for (var i = 0; i < nodes.length; i++){
     var v = nodes[i].getAttribute('data-v');
     var on = selected.indexOf(v) !== -1;
     nodes[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+    // Orange highlight when more numbers are selected than the wheel requires
+    if (on && over) {
+      nodes[i].classList.add('le-num--over');
+    } else {
+      nodes[i].classList.remove('le-num--over');
+    }
   }
 }
 
@@ -566,7 +653,7 @@ function onPick(e){
 
   if (idx === -1){
     if (selected.length >= req){
-      setStatus('err', 'You already selected the required ' + req + ' numbers.');
+      setStatus('err', 'Already at the required ' + req + '. Deselect a number first to swap.');
       return;
     }
     selected.push(v);
@@ -576,7 +663,15 @@ function onPick(e){
 
   syncGridPressed();
   updateSelectionUI();
-  setStatus('ok', 'Selected ' + selected.length + ' of ' + req + '.');
+  var cnt = selected.length;
+  if (req > 0 && cnt > req) {
+    var over = cnt - req;
+    setStatus('err', cnt + ' selected — ' + over + ' too many. Click orange numbers to deselect until you reach ' + req + '.');
+  } else if (req > 0 && cnt < req) {
+    setStatus('ok', cnt + ' of ' + req + ' selected. Pick ' + (req - cnt) + ' more from the grid.');
+  } else if (req > 0 && cnt === req) {
+    setStatus('ok', 'Perfect — ' + cnt + ' numbers selected. Click Create Wheel to generate combinations.');
+  }
 }
 
 function resetSelection(){
@@ -1029,6 +1124,163 @@ function importFromMyLotto() {
   });
 }
 
+/**
+ * Applies an array of main numbers (integers) from a saved play set to the
+ * current wheel selection.
+ *
+ * - Expands maxNum if any number is larger than the current grid ceiling.
+ * - Allows loading MORE numbers than the wheel requires; extras are shown in
+ *   orange so the user knows to deselect some.  The Create button stays
+ *   disabled until the count equals wheel.requiredSelections exactly.
+ * - Clears any previously built wheel output.
+ *
+ * @param {number[]} nums  Array of integers from the saved set (already normalized).
+ * @param {string}   label Human-readable label shown in the status message.
+ */
+function loadSavedSet(nums, label) {
+  if (!wheel) { setStatus('err', 'Load a wheel system first.'); return; }
+  if (!nums || !nums.length) { setStatus('err', 'This saved set has no usable numbers.'); return; }
+
+  var req = parseInt(wheel.requiredSelections, 10) || 0;
+  var lbl = label ? String(label) : 'Saved Set';
+
+  // Expand grid ceiling if any number in the set exceeds current maxNum.
+  var maxSeen = 0;
+  for (var i = 0; i < nums.length; i++) { if (nums[i] > maxSeen) { maxSeen = nums[i]; } }
+  if (maxSeen > maxNum) {
+    maxNum = maxSeen;
+    renderMaxDropdown();
+    if (dom.maxSel) { dom.maxSel.value = String(maxNum); }
+  }
+
+  // Regular lottery: zero is never valid.
+  includeZero = false;
+  if (dom.zeroSel) { dom.zeroSel.value = '0'; }
+
+  // Pre-select the numbers from the saved set.
+  selected = [];
+  for (var j = 0; j < nums.length; j++) { selected.push(pad2(nums[j])); }
+
+  // Clear previously built output.
+  builtLines  = [];
+  builtCombos = [];
+  if (dom.outBody) { dom.outBody.innerHTML = ''; }
+  var cov = document.getElementById('leCoverage');
+  if (cov) { cov.innerHTML = ''; }
+
+  renderGrid();
+  syncGridPressed();
+  updateSelectionUI();
+
+  var cnt = selected.length;
+  if (req > 0 && cnt > req) {
+    var over = cnt - req;
+    setStatus('err', '"' + lbl + '" loaded — ' + cnt + ' numbers (wheel needs ' + req + '). The ' + over + ' extra number' + (over !== 1 ? 's are' : ' is') + ' shown in orange. Click them to deselect until you have exactly ' + req + '.');
+  } else if (req > 0 && cnt < req) {
+    setStatus('err', '"' + lbl + '" loaded — ' + cnt + ' numbers. This wheel needs ' + req + '. Select ' + (req - cnt) + ' more from the grid below.');
+  } else {
+    setStatus('ok', '"' + lbl + '" loaded — ' + cnt + ' numbers. Click Create Wheel to generate combinations.');
+  }
+}
+
+/**
+ * Fetches the list of saved Numbers to Play sets from the MyLottoExpert
+ * endpoint and delegates rendering to renderSavedSetsPanel().
+ *
+ * @param {string} endpoint  URL of the play_sets_list JSON endpoint.
+ * @param {number} autoSetId play_set_id to auto-apply after the list loads (0 = none).
+ */
+function fetchAndRenderSavedSets(endpoint, autoSetId) {
+  if (!dom.savedPanel) { return; }
+  if (!isSameOriginUrl(endpoint)) { return; }
+
+  dom.savedPanel.style.display = '';
+  dom.savedPanel.innerHTML =
+    '<div class="le-saved-panel-head">Your Numbers to Play</div>' +
+    '<div class="le-saved-empty">Loading your saved number sets\u2026</div>';
+
+  fetchJson(endpoint).then(function(j) {
+    if (!j || !j.ok || !Array.isArray(j.sets)) {
+      throw new Error((j && j.error) ? String(j.error) : 'Could not load saved sets.');
+    }
+    renderSavedSetsPanel(j.sets, autoSetId);
+  }).catch(function(err) {
+    dom.savedPanel.innerHTML =
+      '<div class="le-saved-panel-head">Your Numbers to Play</div>' +
+      '<div class="le-saved-empty">Could not load your saved sets: ' +
+      escHtml(String(err && err.message ? err.message : err)) + '</div>';
+  });
+}
+
+/**
+ * Renders the saved-sets panel from a list of set objects returned by
+ * play_sets_list, then optionally auto-applies one set by ID.
+ *
+ * @param {Array}  sets      Array of play-set objects from MyLottoExpert.
+ * @param {number} autoSetId ID of the set to auto-apply (0 = none).
+ */
+function renderSavedSetsPanel(sets, autoSetId) {
+  if (!dom.savedPanel) { return; }
+
+  var req = wheel ? (parseInt(wheel.requiredSelections, 10) || 0) : 0;
+
+  var html = '<div class="le-saved-panel-head">Your Numbers to Play (' + sets.length + ')</div>';
+
+  if (!sets.length) {
+    dom.savedPanel.innerHTML = html +
+      '<div class="le-saved-empty">No saved number sets found. Save a set from the Numbers to Play section in MyLottoExpert, then return here.</div>';
+    return;
+  }
+
+  html += '<div class="le-saved-cards">';
+  for (var i = 0; i < sets.length; i++) {
+    var s    = sets[i];
+    var cnt  = s.main_numbers ? s.main_numbers.length : 0;
+    var badge = req > 0
+      ? (cnt === req ? ' \u2714\ufe0f exact fit' : (cnt > req ? ' (' + (cnt - req) + ' over)' : ' (' + (req - cnt) + ' short)'))
+      : '';
+    var numList = s.main_numbers ? s.main_numbers.join(', ') : '\u2014';
+    var meta = (s.source_badge ? escHtml(s.source_badge) : '') +
+               (s.date_saved   ? ' \u2022 ' + escHtml(s.date_saved) : '') +
+               ' \u2022 ' + cnt + ' numbers' + escHtml(badge);
+
+    html += '<div class="le-saved-card" data-set-id="' + escHtml(String(s.id)) + '">';
+    html += '<div class="le-saved-card-top">';
+    html += '<div>';
+    html += '<div class="le-saved-card-label">' + escHtml(s.label || ('Set #' + s.id)) + '</div>';
+    html += '<div class="le-saved-card-meta">' + meta + '</div>';
+    html += '</div>';
+    html += '<button class="le-saved-card-btn" type="button" data-set-idx="' + i + '" aria-label="Use ' + escHtml(s.label || ('Set #' + s.id)) + '">Use these numbers</button>';
+    html += '</div>';
+    html += '<div class="le-saved-card-nums">' + escHtml(numList) + '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  dom.savedPanel.innerHTML = html;
+
+  // Wire the "Use these numbers" buttons.
+  var btns = dom.savedPanel.querySelectorAll('[data-set-idx]');
+  for (var b = 0; b < btns.length; b++) {
+    (function(idx) {
+      btns[idx].addEventListener('click', function() {
+        var s2 = sets[idx];
+        loadSavedSet(s2.main_numbers || [], s2.label || ('Set #' + s2.id));
+      });
+    })(parseInt(btns[b].getAttribute('data-set-idx'), 10));
+  }
+
+  // Auto-apply the pre-selected set when specified (e.g. from MLE's "Open in Wheel Builder").
+  if (autoSetId > 0) {
+    for (var k = 0; k < sets.length; k++) {
+      if (sets[k].id === autoSetId) {
+        loadSavedSet(sets[k].main_numbers || [], sets[k].label || ('Set #' + sets[k].id));
+        break;
+      }
+    }
+  }
+}
+
 function wireButtons(){
   if (dom.resetBtn) { dom.resetBtn.addEventListener('click', resetSelection); }
   if (dom.randomBtn) { dom.randomBtn.addEventListener('click', randomSelect); }
@@ -1131,13 +1383,15 @@ function loadWheelFromJson(sysId){
     renderGrid();
     updateSelectionUI();
     syncPrintHeader();
-    setStatus('ok', 'Loaded. Select exactly ' + norm.requiredSelections + ' numbers to create your wheel.');
-    // [[WHEEL_IMPORT]] Auto-import when the page was opened from MyLottoExpert
-    // with a pre-selected play set. __pendingAutoImport is set by init() when
-    // both play_set_endpoint and play_set_id are present in the URL.
-    if (__pendingAutoImport) {
-      __pendingAutoImport = false;
-      importFromMyLotto();
+
+    // [[SAVED_SETS]] Once the wheel is ready, automatically fetch and show the
+    // user's saved Numbers to Play sets in the panel below the grid.
+    // If a specific play_set_id was in the URL, that set is auto-applied.
+    if (__playSetsEndpoint) {
+      setStatus('ok', 'Wheel loaded. Loading your saved number sets\u2026');
+      fetchAndRenderSavedSets(__playSetsEndpoint, __autoSelectPlaySetId);
+    } else {
+      setStatus('ok', 'Loaded. Select exactly ' + norm.requiredSelections + ' numbers to create your wheel.');
     }
   }
 
@@ -1199,33 +1453,30 @@ function loadWheelFromJson(sysId){
 
 function init(){
   systemId = qs('system_id');
-  // [[WHEEL_IMPORT]] Detect whether the page was opened from MyLottoExpert
-  // with a pre-selected play set so it can be auto-imported once the wheel loads.
-  var __initEndpoint = qs('play_set_endpoint');
-  var __initPlayId   = parseInt(qs('play_set_id') || '0', 10);
-  if (__initEndpoint && __initPlayId > 0) {
-    __pendingAutoImport = true;
-  }
+
+  // [[SAVED_SETS]] Read the MyLottoExpert saved-sets list endpoint and the
+  // optional pre-selected play set ID from the URL.  These are placed in the
+  // URL by MyLottoExpert's "Open in Wheel Builder" button.
+  __playSetsEndpoint    = qs('play_sets_endpoint');
+  __autoSelectPlaySetId = parseInt(qs('play_set_id') || '0', 10);
+
   renderMaxDropdown();
   wireButtons();
   applyBuilderSeo('Wheel Builder | LottoExpert', 'Use the LottoExpert wheel builder to generate combinations from a selected wheel system.');
 
   if (!systemId) {
-    // [[WHEEL_IMPORT]] When the page was opened from MyLottoExpert Numbers to Play
-    // but without a wheel system pre-selected (play_system_id=0), __pendingAutoImport
-    // is true and play_set_endpoint + play_set_id are in the URL. In that case show
-    // a clear, actionable message directing the user to the catalog so they can choose
-    // a system. The auto-import will fire once they land on this page WITH a system_id.
-    if (__pendingAutoImport) {
-      setStatus('ok', 'Your Numbers to Play set is ready to import. Choose a wheel system from the catalog first and your numbers will load automatically.');
+    // Came from MyLottoExpert without choosing a wheel first: guide the user.
+    var hasSets = !!__playSetsEndpoint || (__autoSelectPlaySetId > 0 && !!qs('play_set_endpoint'));
+    if (hasSets) {
+      setStatus('ok', 'Your saved numbers are ready. Choose a wheel system from the catalog first, then your numbers will load automatically.');
       if (dom.lead) {
         dom.lead.textContent = '';
-        dom.lead.appendChild(document.createTextNode('Your Numbers to Play set is queued for import. '));
+        dom.lead.appendChild(document.createTextNode('Your Numbers to Play set is queued. '));
         var __piLink = document.createElement('a');
         __piLink.href = HUB_URL;
         __piLink.textContent = 'Go to the wheel system catalog';
         dom.lead.appendChild(__piLink);
-        dom.lead.appendChild(document.createTextNode(' and click "View System" on your chosen wheel. Your play set numbers will import automatically once the wheel loads.'));
+        dom.lead.appendChild(document.createTextNode(' and click \u201cView System\u201d on your chosen wheel. Your saved numbers will appear automatically once the wheel loads.'));
       }
     } else {
       setStatus('err', 'Missing system_id in the URL. Go back to the catalog and click "View System".');
