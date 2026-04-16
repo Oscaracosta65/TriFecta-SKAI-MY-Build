@@ -1210,9 +1210,27 @@ function init(){
   wireButtons();
   applyBuilderSeo('Wheel Builder | LottoExpert', 'Use the LottoExpert wheel builder to generate combinations from a selected wheel system.');
 
-  if (!systemId){
-    setStatus('err', 'Missing system_id in the URL. Go back to the catalog and click "View System".');
-    if (dom.lead) { dom.lead.textContent = 'Missing system_id. Open a system from the catalog.'; }
+  if (!systemId) {
+    // [[WHEEL_IMPORT]] When the page was opened from MyLottoExpert Numbers to Play
+    // but without a wheel system pre-selected (play_system_id=0), __pendingAutoImport
+    // is true and play_set_endpoint + play_set_id are in the URL. In that case show
+    // a clear, actionable message directing the user to the catalog so they can choose
+    // a system. The auto-import will fire once they land on this page WITH a system_id.
+    if (__pendingAutoImport) {
+      setStatus('ok', 'Your Numbers to Play set is ready to import. Choose a wheel system from the catalog first and your numbers will load automatically.');
+      if (dom.lead) {
+        dom.lead.textContent = '';
+        dom.lead.appendChild(document.createTextNode('Your Numbers to Play set is queued for import. '));
+        var __piLink = document.createElement('a');
+        __piLink.href = HUB_URL;
+        __piLink.textContent = 'Go to the wheel system catalog';
+        dom.lead.appendChild(__piLink);
+        dom.lead.appendChild(document.createTextNode(' and click "View System" on your chosen wheel. Your play set numbers will import automatically once the wheel loads.'));
+      }
+    } else {
+      setStatus('err', 'Missing system_id in the URL. Go back to the catalog and click "View System".');
+      if (dom.lead) { dom.lead.textContent = 'Missing system_id. Open a system from the catalog.'; }
+    }
     return;
   }
 
