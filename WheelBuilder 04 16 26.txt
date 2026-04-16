@@ -351,7 +351,7 @@ textarea{ min-height:92px; resize:vertical; }
 [[div class="le-grid"]]
   [[div class="le-card"]]
     [[div class="le-label"]]Step 1: Load or select your pool[[/div]]
-    [[div class="le-help"]]When you arrive from your Numbers to Play section, your saved sets appear automatically below the grid. Click "Use these numbers" to pre-select them, then deselect any shown in orange until the count matches the wheel requirement. You can also pick numbers manually or use Random Select.[[/div]]
+    [[div class="le-help"]]Choose numbers manually, use Random Select, or — when arriving from your Numbers to Play section — click "Use these numbers" on one of your saved sets below. If a set has more numbers than this wheel requires, extras are shown in orange: click them to deselect until the count is exact.[[/div]]
 
     [[div class="le-status" role="status" aria-live="polite"]]
       [[span class="le-dot" id="leDot" aria-hidden="true"]][[/span]]
@@ -653,7 +653,7 @@ function onPick(e){
 
   if (idx === -1){
     if (selected.length >= req){
-      setStatus('err', 'Already at the required ' + req + '. Deselect a number first to swap.');
+      setStatus('err', 'Already selected the required ' + req + ' numbers. Deselect one first to swap.');
       return;
     }
     selected.push(v);
