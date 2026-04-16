@@ -278,11 +278,21 @@ textarea{ min-height:92px; resize:vertical; }
   padding:14px;
 }
 .le-saved-panel-head{
-  font-size:13px;
+  font-size:14px;
   font-weight:900;
   color:var(--deep-navy);
   letter-spacing:.18px;
-  margin-bottom:10px;
+  margin-bottom:8px;
+}
+.le-saved-instr{
+  font-size:12px;
+  color:var(--text-muted);
+  line-height:1.55;
+  margin-bottom:12px;
+  padding:10px 12px;
+  background:rgba(28,102,255,.05);
+  border-radius:10px;
+  border:1px solid rgba(28,102,255,.12);
 }
 .le-saved-cards{ display:flex; flex-direction:column; gap:8px; }
 .le-saved-card{
@@ -293,6 +303,9 @@ textarea{ min-height:92px; resize:vertical; }
   transition:border-color .12s;
 }
 .le-saved-card:hover{ border-color:rgba(28,102,255,.45); }
+.le-saved-card--exact{ border-color:rgba(32,201,151,.55); background:rgba(32,201,151,.06); }
+.le-saved-card--over{ border-color:rgba(234,88,12,.40); background:rgba(234,88,12,.05); }
+.le-saved-card--short{ border-color:rgba(28,102,255,.30); }
 .le-saved-card-top{
   display:flex;
   justify-content:space-between;
@@ -303,6 +316,7 @@ textarea{ min-height:92px; resize:vertical; }
 }
 .le-saved-card-label{ font-weight:800; font-size:13px; color:var(--deep-navy); }
 .le-saved-card-meta{ font-size:11px; color:var(--text-muted); margin-top:2px; }
+.le-saved-card-fit{ font-size:11px; font-weight:800; color:var(--deep-navy); margin-top:4px; }
 .le-saved-card-nums{
   font-size:12px;
   color:#334155;
@@ -376,7 +390,6 @@ textarea{ min-height:92px; resize:vertical; }
     [[/div]]
 
     [[div class="le-row" style="margin-top:12px"]]
-      [[button id="leImportBtn" class="le-btn secondary" type="button"]]Import from MyLottoExpert[[/button]]
       [[button id="leRandomBtn" class="le-btn ghost" type="button"]]Random Select[[/button]]
       [[button id="leResetBtn" class="le-btn ghost" type="button"]]Reset Selection[[/button]]
     [[/div]]
@@ -438,6 +451,11 @@ textarea{ min-height:92px; resize:vertical; }
 
 var WHEELS_JSON_URL = '/media/lottoexpert/wheels/wheels.json?v=' + Date.now();
 var HUB_URL = '/all-wheeling-systems';
+// [[SAVED_SETS]] Path to the MyLottoExpert article on this site.
+// Used as the fallback endpoint when the user navigates to the Wheel Builder
+// directly (not via the "Open in Wheel Builder" button from MyLottoExpert).
+// Update this if your MyLottoExpert page is at a different URL.
+var MLE_BASE_PATH = '/my-lotto-expert';
 
 var dom = {
   title: document.getElementById('leTitle'),
@@ -451,7 +469,6 @@ var dom = {
   status: document.getElementById('leStatusText'),
   maxSel: document.getElementById('leMax'),
   zeroSel: document.getElementById('leIncludeZero'),
-  importBtn: document.getElementById('leImportBtn'),
   randomBtn: document.getElementById('leRandomBtn'),
   resetBtn: document.getElementById('leResetBtn'),
   createBtn: document.getElementById('leCreateBtn'),
@@ -480,12 +497,16 @@ var builtLines = [];
 var builtCombos = [];
 var copyResetTimer = null;
 // [[SAVED_SETS]] Endpoint for the MyLottoExpert play_sets_list JSON response.
-// Set by init() when play_sets_endpoint is present in the URL.
-// The panel is rendered automatically once the wheel system has loaded.
+// Resolved in init() from URL params or MLE_BASE_PATH fallback.
+// Always set (never null after init) so the panel loads on every page visit.
 var __playSetsEndpoint = null;
 // [[SAVED_SETS]] When a specific play_set_id is also in the URL, auto-apply
 // that set from the panel after the list is fetched.
 var __autoSelectPlaySetId = 0;
+// [[SAVED_SETS]] Cached set list from the last successful fetch.
+// Stored so applyWheel() can re-render the panel with fit badges once the
+// wheel system is known, without making a second network request.
+var __cachedSavedSets = null;
 
 function qs(name){
   try{
@@ -1196,17 +1217,19 @@ function fetchAndRenderSavedSets(endpoint, autoSetId) {
 
   dom.savedPanel.style.display = '';
   dom.savedPanel.innerHTML =
-    '<div class="le-saved-panel-head">Your Numbers to Play</div>' +
-    '<div class="le-saved-empty">Loading your saved number sets\u2026</div>';
+    '<div class="le-saved-panel-head">\uD83C\uDFAF Your Saved Numbers to Play</div>' +
+    '<div class="le-saved-instr">Your saved number sets are listed below. Tap <strong>Use these numbers</strong> on any set to load it into the wheel. Numbers appear in the order they were saved (most likely to least likely). If a set has more numbers than this wheel requires, the extras will turn orange \u2014 simply click them to remove until the count is exact.</div>' +
+    '<div class="le-saved-empty">Loading your saved sets\u2026</div>';
 
   fetchJson(endpoint).then(function(j) {
     if (!j || !j.ok || !Array.isArray(j.sets)) {
       throw new Error((j && j.error) ? String(j.error) : 'Could not load saved sets.');
     }
+    __cachedSavedSets = j.sets;
     renderSavedSetsPanel(j.sets, autoSetId);
   }).catch(function(err) {
     dom.savedPanel.innerHTML =
-      '<div class="le-saved-panel-head">Your Numbers to Play</div>' +
+      '<div class="le-saved-panel-head">\uD83C\uDFAF Your Saved Numbers to Play</div>' +
       '<div class="le-saved-empty">Could not load your saved sets: ' +
       escHtml(String(err && err.message ? err.message : err)) + '</div>';
   });
@@ -1224,11 +1247,14 @@ function renderSavedSetsPanel(sets, autoSetId) {
 
   var req = wheel ? (parseInt(wheel.requiredSelections, 10) || 0) : 0;
 
-  var html = '<div class="le-saved-panel-head">Your Numbers to Play (' + sets.length + ')</div>';
+  var html = '<div class="le-saved-panel-head">\uD83C\uDFAF Your Saved Numbers to Play</div>';
+  html += '<div class="le-saved-instr">Your saved number sets are listed below in the order they were saved. Tap <strong>Use these numbers</strong> to load a set into the wheel. If a set contains more numbers than the wheel requires, the extra ones will highlight in orange \u2014 just click them to deselect.';
+  if (req > 0) { html += ' This wheel needs exactly <strong>' + req + '</strong> numbers.'; }
+  html += '</div>';
 
-  if (!sets.length) {
-    dom.savedPanel.innerHTML = html +
-      '<div class="le-saved-empty">No saved number sets found. Save a set from the Numbers to Play section in MyLottoExpert, then return here.</div>';
+  if (!sets || !sets.length) {
+    html += '<div class="le-saved-empty">No saved number sets found. Use the Strategy Builder or save directly from a prediction in MyLottoExpert, then come back here.</div>';
+    dom.savedPanel.innerHTML = html;
     return;
   }
 
@@ -1236,19 +1262,32 @@ function renderSavedSetsPanel(sets, autoSetId) {
   for (var i = 0; i < sets.length; i++) {
     var s    = sets[i];
     var cnt  = s.main_numbers ? s.main_numbers.length : 0;
-    var badge = req > 0
-      ? (cnt === req ? ' \u2714\ufe0f exact fit' : (cnt > req ? ' (' + (cnt - req) + ' over)' : ' (' + (req - cnt) + ' short)'))
-      : '';
+    var fitClass = '';
+    var fitLabel = '';
+    if (req > 0) {
+      if (cnt === req) {
+        fitClass = 'le-saved-card--exact';
+        fitLabel = '\u2714\ufe0f Exact fit (' + cnt + ' numbers)';
+      } else if (cnt > req) {
+        fitClass = 'le-saved-card--over';
+        fitLabel = '\u26A0\ufe0f ' + cnt + ' numbers \u2014 ' + (cnt - req) + ' over (deselect the orange ones)';
+      } else {
+        fitClass = 'le-saved-card--short';
+        fitLabel = '\u2139\ufe0f ' + cnt + ' numbers \u2014 need ' + (req - cnt) + ' more from the grid';
+      }
+    } else {
+      fitLabel = cnt + ' numbers';
+    }
     var numList = s.main_numbers ? s.main_numbers.join(', ') : '\u2014';
     var meta = (s.source_badge ? escHtml(s.source_badge) : '') +
-               (s.date_saved   ? ' \u2022 ' + escHtml(s.date_saved) : '') +
-               ' \u2022 ' + cnt + ' numbers' + escHtml(badge);
+               (s.date_saved   ? ' \u2022 ' + escHtml(s.date_saved) : '');
 
-    html += '<div class="le-saved-card" data-set-id="' + escHtml(String(s.id)) + '">';
+    html += '<div class="le-saved-card ' + fitClass + '" data-set-id="' + escHtml(String(s.id)) + '">';
     html += '<div class="le-saved-card-top">';
     html += '<div>';
     html += '<div class="le-saved-card-label">' + escHtml(s.label || ('Set #' + s.id)) + '</div>';
-    html += '<div class="le-saved-card-meta">' + meta + '</div>';
+    if (meta) { html += '<div class="le-saved-card-meta">' + meta + '</div>'; }
+    html += '<div class="le-saved-card-fit">' + fitLabel + '</div>';
     html += '</div>';
     html += '<button class="le-saved-card-btn" type="button" data-set-idx="' + i + '" aria-label="Use ' + escHtml(s.label || ('Set #' + s.id)) + '">Use these numbers</button>';
     html += '</div>';
@@ -1306,12 +1345,6 @@ function wireButtons(){
       resetSelection();
       renderGrid();
       setStatus('ok', includeZero ? '0 enabled (daily games).' : '0 disabled.');
-    });
-  }
-
-  if (dom.importBtn){
-    dom.importBtn.addEventListener('click', function(){
-      importFromMyLotto();
     });
   }
 }
@@ -1384,10 +1417,15 @@ function loadWheelFromJson(sysId){
     updateSelectionUI();
     syncPrintHeader();
 
-    // [[SAVED_SETS]] Once the wheel is ready, automatically fetch and show the
-    // user's saved Numbers to Play sets in the panel below the grid.
-    // If a specific play_set_id was in the URL, that set is auto-applied.
-    if (__playSetsEndpoint) {
+    // [[SAVED_SETS]] Once the wheel requirement is known, either re-render the
+    // already-loaded panel (sets were fetched in parallel during wheel loading)
+    // or trigger the fetch now as a fallback.
+    if (__cachedSavedSets !== null) {
+      // Sets already arrived — re-render with correct fit badges now that
+      // wheel.requiredSelections is known.
+      renderSavedSetsPanel(__cachedSavedSets, __autoSelectPlaySetId);
+      setStatus('ok', 'Wheel loaded. Select a saved set below or pick numbers from the grid.');
+    } else if (__playSetsEndpoint) {
       setStatus('ok', 'Wheel loaded. Loading your saved number sets\u2026');
       fetchAndRenderSavedSets(__playSetsEndpoint, __autoSelectPlaySetId);
     } else {
@@ -1454,33 +1492,51 @@ function loadWheelFromJson(sysId){
 function init(){
   systemId = qs('system_id');
 
-  // [[SAVED_SETS]] Read the MyLottoExpert saved-sets list endpoint and the
-  // optional pre-selected play set ID from the URL.  These are placed in the
-  // URL by MyLottoExpert's "Open in Wheel Builder" button.
-  __playSetsEndpoint    = qs('play_sets_endpoint');
+  // [[SAVED_SETS]] Resolve the endpoint for fetching the user's saved number sets.
+  // Priority: (1) play_sets_endpoint URL param (from MLE "Open in Wheel Builder" button),
+  // (2) derive from play_set_endpoint URL param (strip action, add play_sets_list),
+  // (3) fall back to MLE_BASE_PATH — works for direct catalog navigation.
   __autoSelectPlaySetId = parseInt(qs('play_set_id') || '0', 10);
+  var __rawSetsEndpoint = qs('play_sets_endpoint');
+  if (!__rawSetsEndpoint) {
+    // Try deriving from the single-set import URL (both params come from MLE together,
+    // but in case play_sets_endpoint is missing, derive it from play_set_endpoint).
+    var __singleEndpoint = qs('play_set_endpoint');
+    if (__singleEndpoint) {
+      try {
+        var __epUri = new URL(__singleEndpoint, window.location.href);
+        __epUri.searchParams.set('mle_action', 'play_sets_list');
+        __rawSetsEndpoint = __epUri.pathname + __epUri.search;
+      } catch (e) { /* URL constructor unavailable, fall through to base path */ }
+    }
+  }
+  if (!__rawSetsEndpoint) {
+    // No URL params at all — user navigated directly to the wheel builder.
+    // Use the well-known MLE_BASE_PATH so saved sets still load.
+    __rawSetsEndpoint = MLE_BASE_PATH + '?mle_action=play_sets_list';
+  }
+  __playSetsEndpoint = isSameOriginUrl(__rawSetsEndpoint) ? __rawSetsEndpoint : null;
 
   renderMaxDropdown();
   wireButtons();
   applyBuilderSeo('Wheel Builder | LottoExpert', 'Use the LottoExpert wheel builder to generate combinations from a selected wheel system.');
 
+  // [[SAVED_SETS]] Show the panel immediately and start fetching saved sets
+  // in parallel with wheel loading — no waiting required.
+  if (__playSetsEndpoint) {
+    fetchAndRenderSavedSets(__playSetsEndpoint, __autoSelectPlaySetId);
+  }
+
   if (!systemId) {
-    // Came from MyLottoExpert without choosing a wheel first: guide the user.
-    var hasSets = !!__playSetsEndpoint || (__autoSelectPlaySetId > 0 && !!qs('play_set_endpoint'));
-    if (hasSets) {
-      setStatus('ok', 'Your saved numbers are ready. Choose a wheel system from the catalog first, then your numbers will load automatically.');
-      if (dom.lead) {
-        dom.lead.textContent = '';
-        dom.lead.appendChild(document.createTextNode('Your Numbers to Play set is queued. '));
-        var __piLink = document.createElement('a');
-        __piLink.href = HUB_URL;
-        __piLink.textContent = 'Go to the wheel system catalog';
-        dom.lead.appendChild(__piLink);
-        dom.lead.appendChild(document.createTextNode(' and click \u201cView System\u201d on your chosen wheel. Your saved numbers will appear automatically once the wheel loads.'));
-      }
-    } else {
-      setStatus('err', 'Missing system_id in the URL. Go back to the catalog and click "View System".');
-      if (dom.lead) { dom.lead.textContent = 'Missing system_id. Open a system from the catalog.'; }
+    setStatus('ok', 'Choose a wheel system from the catalog to get started. Your saved numbers are loading below.');
+    if (dom.lead) {
+      dom.lead.textContent = '';
+      dom.lead.appendChild(document.createTextNode('No wheel system selected. '));
+      var __piLink = document.createElement('a');
+      __piLink.href = HUB_URL;
+      __piLink.textContent = 'Go to the wheel system catalog';
+      dom.lead.appendChild(__piLink);
+      dom.lead.appendChild(document.createTextNode(' and click \u201cView System\u201d. Your saved numbers will appear automatically.'));
     }
     return;
   }
