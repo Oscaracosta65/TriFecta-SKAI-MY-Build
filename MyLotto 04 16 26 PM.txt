@@ -2693,6 +2693,10 @@ if ($__mleAction === 'play_set_payload') {
         'play_set_id'                => (int)($row['id'] ?? 0),
         'lottery_id'                 => (int)($row['lottery_id'] ?? 0),
         'target_game_id'             => trim((string)($row['target_game_id'] ?? '')),
+        // target_prediction_family: canonical column written by SKAI at save time.
+        // Falls back to prediction_family for play sets saved before the target_ prefix
+        // was introduced (legacy rows where both columns may be present).
+        // target_prediction_type follows the same two-column convention.
         'target_prediction_family'   => trim((string)($row['target_prediction_family'] ?? $row['prediction_family'] ?? '')),
         'target_prediction_type'     => trim((string)($row['target_prediction_type'] ?? $row['prediction_type'] ?? '')),
         'target_pick_size'           => (int)($row['target_pick_size'] ?? count($main)),

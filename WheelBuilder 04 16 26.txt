@@ -863,11 +863,14 @@ function printWheel(){
  */
 function isSameOriginUrl(url) {
   if (!url || typeof url !== 'string') { return false; }
+  // Reject protocol-relative URLs (//evil.com/...) which look like same-origin paths
+  // but resolve to arbitrary external hosts.
+  if (url.charAt(0) === '/' && url.charAt(1) === '/') { return false; }
   try {
     var parsed = new URL(url, window.location.href);
     return parsed.origin === window.location.origin;
   } catch (e) {
-    // URL constructor unavailable: accept paths that start with / or same host
+    // URL constructor unavailable: accept only absolute-path URLs (start with / not //)
     return url.charAt(0) === '/';
   }
 }
@@ -931,7 +934,7 @@ function applyImportedPlaySet(payload) {
 
   var isBlockedFamily = (family === 'daily')
     || (ptype === 'pick2') || (ptype === 'pick3') || (ptype === 'pick4') || (ptype === 'pick5')
-    || (ptype === 'cash_pop') || (ptype === 'daily');
+    || (ptype === 'cash_pop');
 
   // Secondary heuristic: a pick size of 2-5 with no explicit 'regular' family tag is
   // likely a daily game.  Only trigger when pick size is set and family is not 'regular'.
