@@ -674,7 +674,7 @@ function onPick(e){
 
   if (idx === -1){
     if (selected.length >= req){
-      setStatus('err', 'Already selected the required ' + req + ' numbers. Deselect one first to swap.');
+      setStatus('err', 'Already selected the required ' + req + ' numbers. Deselect one or more to make room.');
       return;
     }
     selected.push(v);
@@ -687,11 +687,11 @@ function onPick(e){
   var cnt = selected.length;
   if (req > 0 && cnt > req) {
     var over = cnt - req;
-    setStatus('err', cnt + ' selected — ' + over + ' too many. Click orange numbers to deselect until you reach ' + req + '.');
+    setStatus('ok', cnt + ' selected — ' + over + ' too many. Click the orange numbers to deselect until you reach ' + req + '.');
   } else if (req > 0 && cnt < req) {
     setStatus('ok', cnt + ' of ' + req + ' selected. Pick ' + (req - cnt) + ' more from the grid.');
   } else if (req > 0 && cnt === req) {
-    setStatus('ok', 'Perfect — ' + cnt + ' numbers selected. Click Create Wheel to generate combinations.');
+    setStatus('ok', 'Perfect \u2014 ' + cnt + ' numbers selected. Click Create Wheel to generate combinations.');
   }
 }
 
@@ -1196,9 +1196,9 @@ function loadSavedSet(nums, label) {
   var cnt = selected.length;
   if (req > 0 && cnt > req) {
     var over = cnt - req;
-    setStatus('err', '"' + lbl + '" loaded — ' + cnt + ' numbers (wheel needs ' + req + '). The ' + over + ' extra number' + (over !== 1 ? 's are' : ' is') + ' shown in orange. Click them to deselect until you have exactly ' + req + '.');
+    setStatus('ok', '"' + lbl + '" loaded — ' + cnt + ' numbers (wheel needs ' + req + '). The ' + over + ' extra number' + (over !== 1 ? 's are' : ' is') + ' shown in orange. Click them to deselect until you have exactly ' + req + '.');
   } else if (req > 0 && cnt < req) {
-    setStatus('err', '"' + lbl + '" loaded — ' + cnt + ' numbers. This wheel needs ' + req + '. Select ' + (req - cnt) + ' more from the grid below.');
+    setStatus('ok', '"' + lbl + '" loaded — ' + cnt + ' numbers. This wheel needs ' + req + '. Select ' + (req - cnt) + ' more from the grid below.');
   } else {
     setStatus('ok', '"' + lbl + '" loaded — ' + cnt + ' numbers. Click Create Wheel to generate combinations.');
   }
