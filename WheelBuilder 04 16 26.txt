@@ -408,6 +408,9 @@ var includeZero = false;
 var builtLines = [];
 var builtCombos = [];
 var copyResetTimer = null;
+// [[WHEEL_IMPORT]] Set to true by init() when URL contains play_set_endpoint + play_set_id.
+// Cleared and consumed by applyWheel() once the wheel system has finished loading.
+var __pendingAutoImport = false;
 
 function qs(name){
   try{
@@ -850,6 +853,179 @@ function printWheel(){
   win.print();
 }
 
+// [[WHEEL_IMPORT]] --- MyLottoExpert play-set import helpers ---
+
+/**
+ * Returns true when url resolves to the same origin as this page.
+ * Prevents the import fetch from being aimed at a foreign server.
+ * ES5-safe: uses try/catch around URL constructor (not available in very old IE,
+ * which falls back to the regex path and accepts relative-origin URLs as safe).
+ */
+function isSameOriginUrl(url) {
+  if (!url || typeof url !== 'string') { return false; }
+  try {
+    var parsed = new URL(url, window.location.href);
+    return parsed.origin === window.location.origin;
+  } catch (e) {
+    // URL constructor unavailable: accept paths that start with / or same host
+    return url.charAt(0) === '/';
+  }
+}
+
+/**
+ * Thin fetch wrapper that returns a Promise resolving to parsed JSON.
+ * Rejects on non-2xx HTTP or JSON parse failure.
+ */
+function fetchJson(url) {
+  return fetch(url, { cache: 'no-store', credentials: 'same-origin' }).then(function(r) {
+    if (!r.ok) { throw new Error('HTTP ' + r.status); }
+    return r.json();
+  });
+}
+
+/**
+ * Converts a raw list (of ints, strings, or mixed) into a deduplicated array
+ * of plain JS integers safe for wheel use.
+ * - strips NaN, out-of-range (0-99) values, and duplicates
+ * - does NOT apply intval truncation that strips leading-zero semantics;
+ *   numbers 0-9 are valid daily digits but this path is only reached after
+ *   the daily-family guard in applyImportedPlaySet() rejects daily rows.
+ */
+function normalizeImportedMainNumbers(list) {
+  var out = [];
+  var seen = {};
+  if (!Array.isArray(list)) { return out; }
+  for (var i = 0; i < list.length; i++) {
+    var n = parseInt(list[i], 10);
+    if (isNaN(n)) { continue; }
+    if (n < 0 || n > 99) { continue; }
+    if (seen[n]) { continue; }
+    seen[n] = true;
+    out.push(n);
+  }
+  return out;
+}
+
+/**
+ * Applies a validated play-set payload (returned by MyLottoExpert play_set_payload
+ * endpoint) to the current wheel state.
+ *
+ * Guards:
+ *   - wheel must be loaded first
+ *   - payload must be an object
+ *   - daily / Pick / Cash Pop families are blocked (wheel builder is regular-lottery only)
+ *   - number count must match wheel.requiredSelections exactly
+ *
+ * On success: resets selection, loads numbers, re-renders grid and selection UI.
+ */
+function applyImportedPlaySet(payload) {
+  if (!wheel) { setStatus('err', 'Load a wheel system first.'); return; }
+  if (!payload || typeof payload !== 'object') { setStatus('err', 'Invalid play-set payload.'); return; }
+
+  // Block daily, Pick 2/3/4/5, and Cash Pop lottery families.
+  // target_prediction_family is the authoritative field added to the payload endpoint.
+  // target_prediction_type is a secondary guard for older rows that lack the family field.
+  var family = String(payload.target_prediction_family || '').toLowerCase();
+  var ptype  = String(payload.target_prediction_type  || '').toLowerCase();
+  var pickSz = parseInt(payload.target_pick_size, 10);
+
+  var isBlockedFamily = (family === 'daily')
+    || (ptype === 'pick2') || (ptype === 'pick3') || (ptype === 'pick4') || (ptype === 'pick5')
+    || (ptype === 'cash_pop') || (ptype === 'daily');
+
+  // Secondary heuristic: a pick size of 2-5 with no explicit 'regular' family tag is
+  // likely a daily game.  Only trigger when pick size is set and family is not 'regular'.
+  if (!isBlockedFamily && !isNaN(pickSz) && pickSz >= 2 && pickSz <= 5 && family !== 'regular') {
+    isBlockedFamily = true;
+  }
+
+  if (isBlockedFamily) {
+    setStatus('err', 'This wheel builder supports regular lottery pools only. Daily and Pick game play sets cannot be wheeled here.');
+    return;
+  }
+
+  var req  = parseInt(wheel.requiredSelections, 10) || 0;
+  var nums = normalizeImportedMainNumbers(payload.main_numbers || []);
+
+  if (!nums.length) {
+    setStatus('err', 'Imported play set has no usable main numbers.');
+    return;
+  }
+
+  if (req > 0 && nums.length !== req) {
+    setStatus('err', 'Imported set has ' + nums.length + ' numbers but this wheel requires exactly ' + req + '. Adjust your play set or choose a different wheel.');
+    return;
+  }
+
+  // Expand maxNum if any imported number is larger than the current grid ceiling.
+  var maxSeen = 0;
+  for (var i = 0; i < nums.length; i++) {
+    if (nums[i] > maxSeen) { maxSeen = nums[i]; }
+  }
+  if (maxSeen > maxNum) {
+    maxNum = maxSeen;
+    renderMaxDropdown();
+    if (dom.maxSel) { dom.maxSel.value = String(maxNum); }
+  }
+
+  // Regular lottery numbers are always 1-based; ensure zero is disabled.
+  includeZero = false;
+  if (dom.zeroSel) { dom.zeroSel.value = '0'; }
+
+  // Apply selection state.
+  selected = [];
+  for (var j = 0; j < nums.length; j++) { selected.push(pad2(nums[j])); }
+
+  // Clear any previously built wheel output.
+  builtLines  = [];
+  builtCombos = [];
+  if (dom.outBody) { dom.outBody.innerHTML = ''; }
+  var cov = document.getElementById('leCoverage');
+  if (cov) { cov.innerHTML = ''; }
+
+  renderGrid();
+  syncGridPressed();
+  updateSelectionUI();
+
+  var lbl = payload.label ? String(payload.label) : ('Play Set #' + String(payload.play_set_id || ''));
+  setStatus('ok', 'Imported "' + lbl + '" - ' + nums.length + ' numbers loaded. Click Create Wheel to generate combinations.');
+}
+
+/**
+ * Reads play_set_endpoint and play_set_id from the current page URL,
+ * fetches the play-set payload from MyLottoExpert, and calls applyImportedPlaySet().
+ * Shows friendly error messages on any failure path.
+ */
+function importFromMyLotto() {
+  var endpoint  = qs('play_set_endpoint');
+  var playSetId = parseInt(qs('play_set_id') || '0', 10);
+
+  if (!endpoint || playSetId <= 0) {
+    setStatus('err', 'No MyLottoExpert play set found in the URL. Use the "Open in Wheel Builder" button from the Numbers to Play section.');
+    return;
+  }
+
+  // Security: only fetch from the same origin to prevent open-redirect fetch abuse.
+  if (!isSameOriginUrl(endpoint)) {
+    setStatus('err', 'Import endpoint is not on this site. Cannot import.');
+    return;
+  }
+
+  setStatus('ok', 'Loading your play set from MyLottoExpert...');
+
+  var glue = endpoint.indexOf('?') === -1 ? '?' : '&';
+  var url  = endpoint + glue + 'play_set_id=' + encodeURIComponent(String(playSetId));
+
+  fetchJson(url).then(function(j) {
+    if (!j || !j.ok || !j.payload) {
+      throw new Error((j && j.error) ? String(j.error) : 'Unexpected response from MyLottoExpert.');
+    }
+    applyImportedPlaySet(j.payload);
+  }).catch(function(err) {
+    setStatus('err', 'Import failed: ' + String(err && err.message ? err.message : err));
+  });
+}
+
 function wireButtons(){
   if (dom.resetBtn) { dom.resetBtn.addEventListener('click', resetSelection); }
   if (dom.randomBtn) { dom.randomBtn.addEventListener('click', randomSelect); }
@@ -880,7 +1056,7 @@ function wireButtons(){
 
   if (dom.importBtn){
     dom.importBtn.addEventListener('click', function(){
-      setStatus('err', 'Import is not wired yet. Next step is adding a Joomla endpoint to pull your saved prediction pool from MyLottoExpert.');
+      importFromMyLotto();
     });
   }
 }
@@ -953,6 +1129,13 @@ function loadWheelFromJson(sysId){
     updateSelectionUI();
     syncPrintHeader();
     setStatus('ok', 'Loaded. Select exactly ' + norm.requiredSelections + ' numbers to create your wheel.');
+    // [[WHEEL_IMPORT]] Auto-import when the page was opened from MyLottoExpert
+    // with a pre-selected play set. __pendingAutoImport is set by init() when
+    // both play_set_endpoint and play_set_id are present in the URL.
+    if (__pendingAutoImport) {
+      __pendingAutoImport = false;
+      importFromMyLotto();
+    }
   }
 
   function fallbackFetch(){
@@ -1013,6 +1196,13 @@ function loadWheelFromJson(sysId){
 
 function init(){
   systemId = qs('system_id');
+  // [[WHEEL_IMPORT]] Detect whether the page was opened from MyLottoExpert
+  // with a pre-selected play set so it can be auto-imported once the wheel loads.
+  var __initEndpoint = qs('play_set_endpoint');
+  var __initPlayId   = parseInt(qs('play_set_id') || '0', 10);
+  if (__initEndpoint && __initPlayId > 0) {
+    __pendingAutoImport = true;
+  }
   renderMaxDropdown();
   wireButtons();
   applyBuilderSeo('Wheel Builder | LottoExpert', 'Use the LottoExpert wheel builder to generate combinations from a selected wheel system.');

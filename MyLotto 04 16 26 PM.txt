@@ -2679,19 +2679,33 @@ if ($__mleAction === 'play_set_payload') {
         exit;
     }
 
+    // [[MLE_WHEEL_CONTRACT]] Build the wheel-import payload.
+    // target_prediction_family is required by Wheel Builder to block daily/Pick game imports.
+    // settings_json, risk_profile, and strategy carry run-context for settings transfer.
+    $__psSettingsJson = '';
+    foreach (array('settings_json', 'settings', 'params_json', 'params') as $__psSKey) {
+        if (isset($row[$__psSKey]) && (string)$row[$__psSKey] !== '') {
+            $__psSettingsJson = (string)$row[$__psSKey];
+            break;
+        }
+    }
     $payload = array(
-        'play_set_id'             => (int)($row['id'] ?? 0),
-        'lottery_id'              => (int)($row['lottery_id'] ?? 0),
-        'target_game_id'          => trim((string)($row['target_game_id'] ?? '')),
-        'target_prediction_type'  => trim((string)($row['target_prediction_type'] ?? '')),
-        'target_pick_size'        => (int)($row['target_pick_size'] ?? count($main)),
-        'target_extra_count'      => (int)($row['target_extra_count'] ?? count($extra)),
-        'main_numbers'            => $main,
-        'extra_ball_numbers'      => $extra,
-        'label'                   => trim((string)($row['label'] ?? '')),
-        'origin_source'           => $meta['origin_source'],
-        'save_intent'             => $meta['save_intent'],
-        'play_status'             => $meta['play_status']
+        'play_set_id'                => (int)($row['id'] ?? 0),
+        'lottery_id'                 => (int)($row['lottery_id'] ?? 0),
+        'target_game_id'             => trim((string)($row['target_game_id'] ?? '')),
+        'target_prediction_family'   => trim((string)($row['target_prediction_family'] ?? $row['prediction_family'] ?? '')),
+        'target_prediction_type'     => trim((string)($row['target_prediction_type'] ?? $row['prediction_type'] ?? '')),
+        'target_pick_size'           => (int)($row['target_pick_size'] ?? count($main)),
+        'target_extra_count'         => (int)($row['target_extra_count'] ?? count($extra)),
+        'main_numbers'               => $main,
+        'extra_ball_numbers'         => $extra,
+        'label'                      => trim((string)($row['label'] ?? '')),
+        'origin_source'              => $meta['origin_source'],
+        'save_intent'                => $meta['save_intent'],
+        'play_status'                => $meta['play_status'],
+        'settings_json'              => $__psSettingsJson,
+        'risk_profile'               => trim((string)($row['risk_profile'] ?? '')),
+        'strategy'                   => trim((string)($row['strategy'] ?? ''))
     );
 
     echo json_encode(array('ok' => true, 'payload' => $payload), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
