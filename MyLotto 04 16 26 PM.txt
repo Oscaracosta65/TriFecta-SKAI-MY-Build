@@ -2758,6 +2758,9 @@ if ($__mleAction === 'play_sets_list') {
     if (in_array('origin_source', $snCols2, true)) {
         $q->select($db->quoteName('origin_source'));
     }
+    if (in_array('play_notes', $snCols2, true)) {
+        $q->select($db->quoteName('play_notes'));
+    }
     if (in_array('play_status', $snCols2, true)) {
         $q->select($db->quoteName('play_status'));
         $q->where($db->quoteName('play_status') . " <> 'archived'");
@@ -2800,6 +2803,7 @@ if ($__mleAction === 'play_sets_list') {
             'extra_ball_numbers' => mylottoexpertParseNumberCsv($lRow['extra_ball_numbers'] ?? '', true),
             'source_badge'       => $lBadge,
             'date_saved'         => $lSavedLabel,
+            'notes'              => trim((string)($lRow['play_notes'] ?? '')),
         );
     }
     echo json_encode(array('ok' => true, 'sets' => $listSets), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
