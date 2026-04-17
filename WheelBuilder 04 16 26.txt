@@ -1420,6 +1420,69 @@ function renderSavedSetsPanel(sets, autoSetId) {
   }
 }
 
+/**
+ * Updates fit badges and fit classes in-place on already-rendered saved-set
+ * cards, without replacing innerHTML.  Called by applyWheel() once the wheel
+ * requirement is known, so that the panel (which rendered correctly on first
+ * load) keeps its DOM state, event listeners, and any CMS enhancements intact.
+ *
+ * @param {number} autoSetId  ID of the set to auto-apply (0 = none).
+ */
+function updateSavedSetsFitBadges(autoSetId) {
+  if (!dom.savedPanel) { return; }
+  var req = wheel ? (parseInt(wheel.requiredSelections, 10) || 0) : 0;
+  var sets = __cachedSavedSets || [];
+
+  // Replace the "no wheel" warning with the proper instruction text now that
+  // a wheel is loaded.  Targets only the warning div — nothing else changes.
+  var noWheel = dom.savedPanel.querySelector('.le-saved-no-wheel');
+  if (noWheel && req > 0) {
+    var instr = document.createElement('div');
+    instr.className = 'le-saved-instr';
+    instr.style.cssText = 'font-size:12px;color:#5B6B86;line-height:1.55;margin-bottom:12px;padding:10px 12px;background:rgba(28,102,255,.05);border-radius:10px;border:1px solid rgba(28,102,255,.12);';
+    instr.innerHTML = 'Click <strong>Use these numbers</strong> on any set to load it into the grid.' +
+      ' This wheel needs exactly <strong>' + req + '</strong> numbers.';
+    noWheel.parentNode.replaceChild(instr, noWheel);
+  }
+
+  // Walk the existing cards and update fit class + fit label in-place.
+  var cards = dom.savedPanel.querySelectorAll('.le-saved-card');
+  for (var i = 0; i < cards.length; i++) {
+    var s = sets[i];
+    if (!s) { continue; }
+    var cnt = (s.main_numbers || []).length;
+    var fitClass = '';
+    var fitLabel = '';
+    if (req > 0) {
+      if (cnt === req) {
+        fitClass = 'le-saved-card--exact';
+        fitLabel = '\u2714\ufe0f ' + cnt + ' numbers \u2014 exact fit';
+      } else if (cnt > req) {
+        fitClass = 'le-saved-card--over';
+        fitLabel = '\u26A0\ufe0f ' + cnt + ' numbers \u2014 ' + (cnt - req) + ' over (deselect the orange ones)';
+      } else {
+        fitClass = 'le-saved-card--short';
+        fitLabel = '\u2139\ufe0f ' + cnt + ' numbers \u2014 need ' + (req - cnt) + ' more from the grid';
+      }
+    } else {
+      fitLabel = cnt + ' numbers';
+    }
+    cards[i].className = 'le-saved-card' + (fitClass ? ' ' + fitClass : '');
+    var fitEl = cards[i].querySelector('.le-saved-card-fit');
+    if (fitEl) { fitEl.textContent = fitLabel; }
+  }
+
+  // Auto-apply a pre-selected set (e.g. from MLE's button) if one was specified.
+  if (autoSetId > 0) {
+    for (var k = 0; k < sets.length; k++) {
+      if (sets[k].id === autoSetId) {
+        loadSavedSet(sets[k].main_numbers || [], sets[k].label || ('Set #' + sets[k].id));
+        break;
+      }
+    }
+  }
+}
+
 function wireButtons(){
   if (dom.resetBtn) { dom.resetBtn.addEventListener('click', resetSelection); }
   if (dom.randomBtn) { dom.randomBtn.addEventListener('click', randomSelect); }
@@ -1517,13 +1580,13 @@ function loadWheelFromJson(sysId){
     updateSelectionUI();
     syncPrintHeader();
 
-    // [[SAVED_SETS]] Once the wheel requirement is known, either re-render the
-    // already-loaded panel (sets were fetched in parallel during wheel loading)
-    // or trigger the fetch now as a fallback.
+    // [[SAVED_SETS]] Once the wheel requirement is known, either update the
+    // already-rendered panel in-place (preserving DOM state and event listeners)
+    // or trigger the fetch as a fallback if sets haven't arrived yet.
     if (__cachedSavedSets !== null) {
-      // Sets already arrived — re-render with correct fit badges now that
-      // wheel.requiredSelections is known.
-      renderSavedSetsPanel(__cachedSavedSets, __autoSelectPlaySetId);
+      // Sets already arrived — update fit badges in-place so the display that
+      // was already rendering correctly is NOT destroyed by an innerHTML replace.
+      updateSavedSetsFitBadges(__autoSelectPlaySetId);
       setStatus('ok', 'Wheel loaded. Select a saved set below or pick numbers from the grid.');
     } else if (__playSetsEndpoint) {
       setStatus('ok', 'Wheel loaded. Loading your saved number sets\u2026');
