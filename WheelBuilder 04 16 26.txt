@@ -340,6 +340,15 @@ textarea{ min-height:92px; resize:vertical; }
 .le-saved-card-btn:hover{ background:var(--skai-blue); color:#fff; }
 .le-saved-card-btn:focus{ outline:3px solid rgba(28,102,255,.30); outline-offset:2px; }
 .le-saved-empty{ font-size:13px; color:var(--text-muted); }
+.le-saved-not-connected{
+  font-size:12px;
+  color:var(--text-muted);
+  padding:10px 12px;
+  background:rgba(10,26,51,.04);
+  border-radius:8px;
+  border:1px dashed var(--border-strong);
+  text-align:center;
+}
 
 /* Over-quota: selected numbers shown orange when count exceeds wheel requirement */
 .le-num[aria-pressed="true"].le-num--over{
@@ -365,12 +374,14 @@ textarea{ min-height:92px; resize:vertical; }
 [[div class="le-grid"]]
   [[div class="le-card"]]
     [[div class="le-label"]]Step 1: Load or select your pool[[/div]]
-    [[div class="le-help"]]Choose numbers manually, use Random Select, or — when arriving from your Numbers to Play section — click "Use these numbers" on one of your saved sets below. If a set has more numbers than this wheel requires, extras are shown in orange: click them to deselect until the count is exact.[[/div]]
+    [[div class="le-help"]]Your saved number sets from MyLottoExpert are shown below. Click <strong>Use these numbers</strong> on any set to populate the grid — then create your wheel. Or choose numbers manually using the grid or Random Select.[[/div]]
 
     [[div class="le-status" role="status" aria-live="polite"]]
       [[span class="le-dot" id="leDot" aria-hidden="true"]][[/span]]
       [[div id="leStatusText"]]Preparing…[[/div]]
     [[/div]]
+
+    [[div id="leSavedSetsPanel" class="le-saved-panel" style="display:none;" aria-label="Your Numbers to Play"]][[/div]]
 
     [[div class="le-row" style="margin-top:12px"]]
       [[div style="flex:1 1 180px"]]
@@ -401,8 +412,6 @@ textarea{ min-height:92px; resize:vertical; }
     [[/div]]
 
     [[div id="leGrid" class="le-number-grid" role="group" aria-label="Number selection grid"]][[/div]]
-
-    [[div id="leSavedSetsPanel" class="le-saved-panel" style="display:none;" aria-label="Your Numbers to Play"]][[/div]]
 
     [[div class="le-row" style="margin-top:12px"]]
       [[button id="leCreateBtn" class="le-btn" type="button" disabled]]Create Wheel[[/button]]
@@ -451,11 +460,10 @@ textarea{ min-height:92px; resize:vertical; }
 
 var WHEELS_JSON_URL = '/media/lottoexpert/wheels/wheels.json?v=' + Date.now();
 var HUB_URL = '/all-wheeling-systems';
-// [[SAVED_SETS]] Path to the MyLottoExpert article on this site.
-// Used as the fallback endpoint when the user navigates to the Wheel Builder
+// [[SAVED_SETS]] Path to the MyLottoExpert dashboard on this site.
+// Used as the fallback endpoint when the user navigates to Wheel Builder
 // directly (not via the "Open in Wheel Builder" button from MyLottoExpert).
-// Update this if your MyLottoExpert page is at a different URL.
-var MLE_BASE_PATH = '/my-lotto-expert';
+var MLE_BASE_PATH = '/membership/my-dashboard';
 
 var dom = {
   title: document.getElementById('leTitle'),
@@ -1205,6 +1213,20 @@ function loadSavedSet(nums, label) {
 }
 
 /**
+ * Shows a static "not connected" state in the saved sets panel when no
+ * MyLottoExpert endpoint URL was found in the page URL.  No HTTP request
+ * is made — this prevents 404 errors on direct navigation.
+ */
+function showSavedSetsNotConnected() {
+  if (!dom.savedPanel) { return; }
+  dom.savedPanel.style.display = '';
+  dom.savedPanel.innerHTML =
+    '<div class="le-saved-panel-head">\uD83C\uDFAF Your Saved Numbers to Play</div>' +
+    '<div class="le-saved-instr">To load your saved number sets here automatically, go to <strong>MyLottoExpert \u2192 Numbers to Play</strong> and click <strong>\u201cOpen in Wheel Builder\u201d</strong> on the set you want to use. Your numbers will appear in this panel instantly.</div>' +
+    '<div class="le-saved-not-connected">Not connected to MyLottoExpert \u2014 no saved sets to display.</div>';
+}
+
+/**
  * Fetches the list of saved Numbers to Play sets from the MyLottoExpert
  * endpoint and delegates rendering to renderSavedSetsPanel().
  *
@@ -1494,41 +1516,42 @@ function init(){
 
   // [[SAVED_SETS]] Resolve the endpoint for fetching the user's saved number sets.
   // Priority: (1) play_sets_endpoint URL param (from MLE "Open in Wheel Builder" button),
-  // (2) derive from play_set_endpoint URL param (strip action, add play_sets_list),
-  // (3) fall back to MLE_BASE_PATH — works for direct catalog navigation.
+  //           (2) derive from play_set_endpoint URL param,
+  //           (3) fall back to MLE_BASE_PATH for direct catalog navigation.
   __autoSelectPlaySetId = parseInt(qs('play_set_id') || '0', 10);
   var __rawSetsEndpoint = qs('play_sets_endpoint');
   if (!__rawSetsEndpoint) {
-    // Try deriving from the single-set import URL (both params come from MLE together,
-    // but in case play_sets_endpoint is missing, derive it from play_set_endpoint).
     var __singleEndpoint = qs('play_set_endpoint');
     if (__singleEndpoint) {
       try {
         var __epUri = new URL(__singleEndpoint, window.location.href);
         __epUri.searchParams.set('mle_action', 'play_sets_list');
         __rawSetsEndpoint = __epUri.pathname + __epUri.search;
-      } catch (e) { /* URL constructor unavailable, fall through to base path */ }
+      } catch (e) { /* URL constructor unavailable */ }
     }
   }
   if (!__rawSetsEndpoint) {
-    // No URL params at all — user navigated directly to the wheel builder.
-    // Use the well-known MLE_BASE_PATH so saved sets still load.
+    // No URL params — user navigated directly. Use MLE_BASE_PATH.
     __rawSetsEndpoint = MLE_BASE_PATH + '?mle_action=play_sets_list';
   }
-  __playSetsEndpoint = isSameOriginUrl(__rawSetsEndpoint) ? __rawSetsEndpoint : null;
+  __playSetsEndpoint = (__rawSetsEndpoint && isSameOriginUrl(__rawSetsEndpoint))
+    ? __rawSetsEndpoint
+    : null;
 
   renderMaxDropdown();
   wireButtons();
   applyBuilderSeo('Wheel Builder | LottoExpert', 'Use the LottoExpert wheel builder to generate combinations from a selected wheel system.');
 
-  // [[SAVED_SETS]] Show the panel immediately and start fetching saved sets
-  // in parallel with wheel loading — no waiting required.
+  // [[SAVED_SETS]] Always show the panel immediately and start fetching saved
+  // sets in parallel with wheel loading — no waiting required.
   if (__playSetsEndpoint) {
     fetchAndRenderSavedSets(__playSetsEndpoint, __autoSelectPlaySetId);
+  } else {
+    showSavedSetsNotConnected();
   }
 
   if (!systemId) {
-    setStatus('ok', 'Choose a wheel system from the catalog to get started. Your saved numbers are loading below.');
+    setStatus('ok', 'Choose a wheel system from the catalog to get started.');
     if (dom.lead) {
       dom.lead.textContent = '';
       dom.lead.appendChild(document.createTextNode('No wheel system selected. '));
@@ -1536,7 +1559,7 @@ function init(){
       __piLink.href = HUB_URL;
       __piLink.textContent = 'Go to the wheel system catalog';
       dom.lead.appendChild(__piLink);
-      dom.lead.appendChild(document.createTextNode(' and click \u201cView System\u201d. Your saved numbers will appear automatically.'));
+      dom.lead.appendChild(document.createTextNode(' and click \u201cView System\u201d. Your saved numbers will load automatically.'));
     }
     return;
   }
