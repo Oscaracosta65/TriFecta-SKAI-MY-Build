@@ -1353,21 +1353,21 @@ function renderSavedSetsPanel(sets, autoSetId) {
     var numList = nums.length ? nums.join(', ') : '\u2014';
     var previewId = 'le-nums-preview-' + i;
 
-    html += '<div class="le-saved-card ' + fitClass + '" data-set-id="' + escHtml(String(s.id)) + '">';
-    html += '<div class="le-saved-card-header">';
-    html += '<button class="le-saved-card-btn" type="button" data-set-idx="' + i + '" aria-label="Use set ' + escHtml(String(s.id)) + '">\u25B6 Use these numbers</button>';
-    html += '<div class="le-saved-card-info">';
-    html += '<div class="le-saved-card-ref">Set #' + escHtml(String(s.id)) + (s.date_saved ? ' \u00b7 ' + escHtml(s.date_saved) : '') + '</div>';
-    if (s.source_badge) { html += '<div class="le-saved-card-meta">' + escHtml(s.source_badge) + '</div>'; }
-    if (s.notes) { html += '<div class="le-saved-card-notes">' + escHtml(s.notes) + '</div>'; }
-    html += '<div class="le-saved-card-fit">' + fitLabel + '</div>';
+    html += '<div class="le-saved-card ' + fitClass + '" data-set-id="' + escHtml(String(s.id)) + '" style="border:1px solid rgba(10,26,51,.15);border-radius:12px;background:#fff;overflow:hidden;margin-bottom:0;">';
+    html += '<div class="le-saved-card-header" style="display:flex;align-items:center;gap:10px;padding:10px 12px;">';
+    html += '<button class="le-saved-card-btn" type="button" data-set-idx="' + i + '" aria-label="Use set ' + escHtml(String(s.id)) + '" style="flex-shrink:0;appearance:none;-webkit-appearance:none;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:800;cursor:pointer;background:#1C66FF;color:#fff;min-height:34px;white-space:nowrap;">\u25B6 Use these numbers</button>';
+    html += '<div class="le-saved-card-info" style="flex:1;min-width:0;">';
+    html += '<div class="le-saved-card-ref" style="font-weight:800;font-size:13px;color:#0A1A33;">Set #' + escHtml(String(s.id)) + (s.date_saved ? ' \u00b7 ' + escHtml(s.date_saved) : '') + '</div>';
+    if (s.source_badge) { html += '<div class="le-saved-card-meta" style="font-size:11px;color:#5B6B86;">' + escHtml(s.source_badge) + '</div>'; }
+    if (s.notes) { html += '<div class="le-saved-card-notes" style="font-size:11px;color:#5B6B86;font-style:italic;">' + escHtml(s.notes) + '</div>'; }
+    html += '<div class="le-saved-card-fit" style="font-size:11px;font-weight:700;color:#0A1A33;margin-top:2px;">' + fitLabel + '</div>';
     html += '</div>'; // .le-saved-card-info
     html += '</div>'; // .le-saved-card-header
     // Numbers collapsed by default; toggle shows them
-    html += '<div class="le-saved-card-preview" style="display:none;" id="' + previewId + '">';
-    html += '<div class="le-saved-card-nums">' + escHtml(numList) + '</div>';
+    html += '<div class="le-saved-card-preview" style="display:none;padding:0 12px 10px;border-top:1px solid rgba(10,26,51,.07);" id="' + previewId + '">';
+    html += '<div class="le-saved-card-nums" style="font-size:12px;color:#334155;line-height:1.6;word-break:break-word;padding:6px 8px;background:rgba(10,26,51,.04);border-radius:6px;">' + escHtml(numList) + '</div>';
     html += '</div>';
-    html += '<button class="le-saved-card-preview-toggle" type="button" data-preview-id="' + previewId + '" style="margin:0 12px 8px;">\u25BC Show numbers</button>';
+    html += '<button class="le-saved-card-preview-toggle" type="button" data-preview-id="' + previewId + '" style="background:none;border:none;padding:0 12px 8px;font-size:11px;color:#1C66FF;cursor:pointer;display:block;">\u25BC Show numbers</button>';
     html += '</div>'; // .le-saved-card
   }
   html += '</div>';
@@ -1591,6 +1591,39 @@ function loadWheelFromJson(sysId){
 
 function init(){
   systemId = qs('system_id');
+
+  // Inject card CSS at runtime so it is always fresh regardless of CMS stylesheet caching.
+  // This guarantees the saved-set cards are styled even when the server-cached stylesheet
+  // predates the current JS structure.
+  (function injectCardCSS(){
+    var id = 'le-wb-card-css';
+    if (document.getElementById(id)) { return; }
+    var s = document.createElement('style');
+    s.id = id;
+    s.textContent = [
+      '.le-saved-cards{display:flex;flex-direction:column;gap:10px;}',
+      '.le-saved-card{border:1px solid rgba(10,26,51,.15);border-radius:12px;background:#fff;overflow:hidden;transition:border-color .12s;}',
+      '.le-saved-card:hover{border-color:rgba(28,102,255,.45);}',
+      '.le-saved-card--exact{border-color:rgba(32,201,151,.65);background:rgba(32,201,151,.06);}',
+      '.le-saved-card--over{border-color:rgba(234,88,12,.50);background:rgba(234,88,12,.05);}',
+      '.le-saved-card--short{border-color:rgba(28,102,255,.35);}',
+      '.le-saved-card-header{display:flex!important;align-items:center;gap:10px;padding:10px 12px;}',
+      '.le-saved-card-btn{flex-shrink:0;appearance:none;-webkit-appearance:none;border:none;border-radius:8px;',
+      'padding:7px 14px;font-size:13px;font-weight:800;cursor:pointer;background:#1C66FF;color:#fff;',
+      'transition:background .12s;min-height:34px;white-space:nowrap;line-height:1.2;}',
+      '.le-saved-card-btn:hover{background:#1553d4;}',
+      '.le-saved-card-info{flex:1;min-width:0;}',
+      '.le-saved-card-ref{font-weight:800;font-size:13px;color:#0A1A33;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+      '.le-saved-card-meta{font-size:11px;color:#5B6B86;margin-top:1px;}',
+      '.le-saved-card-notes{font-size:11px;color:#5B6B86;margin-top:1px;font-style:italic;}',
+      '.le-saved-card-fit{font-size:11px;font-weight:700;color:#0A1A33;margin-top:2px;}',
+      '.le-saved-card-preview{padding:0 12px 10px;border-top:1px solid rgba(10,26,51,.07);}',
+      '.le-saved-card-preview-toggle{background:none;border:none;padding:0 12px 8px;font-size:11px;color:#1C66FF;cursor:pointer;display:block;}',
+      '.le-saved-card-nums{font-size:12px;color:#334155;line-height:1.6;word-break:break-word;padding:6px 8px;background:rgba(10,26,51,.04);border-radius:6px;}',
+      '.le-saved-no-wheel{font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px;margin-bottom:8px;}'
+    ].join('');
+    document.head.appendChild(s);
+  })();
 
   // [[SAVED_SETS]] Resolve the endpoint for fetching the user's saved number sets.
   // Priority: (1) play_sets_endpoint URL param (from MLE "Open in Wheel Builder" button),
