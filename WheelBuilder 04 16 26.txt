@@ -662,7 +662,9 @@ function syncPrintHeader(){
 
 function renderMaxDropdown(){
   if (!dom.maxSel) { return; }
-  dom.maxSel.innerHTML = '';
+  // Use clearNode instead of innerHTML='' to avoid triggering the Sorcerer
+  // CMS innerHTML interceptor, which would detach cached dom.* references.
+  clearNode(dom.maxSel);
   var opt0 = document.createElement('option');
   opt0.value = '0';
   opt0.textContent = '-- Select Highest --';
@@ -678,7 +680,11 @@ function renderMaxDropdown(){
 
 function renderGrid(){
   if (!dom.grid) { return; }
-  dom.grid.innerHTML = '';
+  // Use clearNode instead of innerHTML='' — the Sorcerer CMS intercepts
+  // innerHTML setter on watched module elements and reconstructs the DOM,
+  // which detaches all cached dom.* references and breaks event listeners
+  // (including the Create Wheel button click). removeChild() bypasses it.
+  clearNode(dom.grid);
   var start = includeZero ? 0 : 1;
   var end = maxNum;
 
