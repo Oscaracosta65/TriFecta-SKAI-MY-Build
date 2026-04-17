@@ -556,6 +556,16 @@ var __playSetsEndpoint = null;
 // that set from the panel after the list is fetched.
 var __autoSelectPlaySetId = 0;
 
+// [[SAVED_PANEL]] State machine for the single-render panel model.
+// All panel mutations go through renderSavedPanel(), which calls clearNode()
+// then builds the subtree with DOM APIs only.  No innerHTML is ever assigned
+// on the panel element, so no CMS mutation handler can corrupt the layout.
+var __panelState  = 'idle';  // 'idle' | 'loading' | 'not_connected' | 'error' | 'ready'
+var __panelSets   = null;    // Array of sets from last successful fetch, or null
+var __panelError  = '';      // Human-readable error string for 'error' state
+var __panelAutoId = 0;       // play_set_id consumed once by renderSavedPanel() to auto-apply
+var __wheelReady  = false;   // true after applyWheel() has run
+
 
 function qs(name){
   try{
@@ -1253,23 +1263,233 @@ function loadSavedSet(nums, label) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SAVED PANEL - state-driven DOM renderer
+//
+// Root cause of "shows correctly then collapses to unstructured text":
+//   fetchAndRenderSavedSets() wrote a loading placeholder via innerHTML, then
+//   renderSavedSetsPanel() wrote the final cards via a second innerHTML assign.
+//   Each innerHTML assignment destroyed and rebuilt the entire subtree.  On
+//   this Joomla / Sorcerer install, a CMS mutation observer processes every
+//   innerHTML change on module elements and strips class structure from the
+//   re-inserted HTML, collapsing cards to plain text.
+//
+// Fix:
+//   All panel mutations now go through renderSavedPanel(), which calls
+//   clearNode() then builds the full subtree with createElement / appendChild /
+//   textContent.  innerHTML is never assigned on the panel element itself.
+//   The state model (loading / not_connected / error / ready) guarantees
+//   exactly one clear-and-build per async event with no partial-DOM conflicts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Removes all child nodes without replacing innerHTML.
+function clearNode(node) {
+  while (node.firstChild) { node.removeChild(node.firstChild); }
+}
+
+// Creates an element with an optional CSS class and optional text content.
+function createEl(tag, cls, text) {
+  var el = document.createElement(tag);
+  if (cls) { el.className = cls; }
+  if (text !== undefined && text !== null) { el.textContent = String(text); }
+  return el;
+}
+
+function buildSavedPanelHeader() {
+  return createEl('div', 'le-saved-panel-head', '\uD83C\uDFAF Your Saved Numbers to Play');
+}
+
+// Builds the instruction paragraph.  Shows exact-fit language when the wheel
+// requirement is known, otherwise shows the generic loading instructions.
+function buildSavedPanelInstructions(req) {
+  var d = createEl('div', 'le-saved-instr');
+  if (__wheelReady && req > 0) {
+    d.appendChild(document.createTextNode('Click '));
+    d.appendChild(createEl('strong', null, 'Use these numbers'));
+    d.appendChild(document.createTextNode(' on any set to load it into the grid. This wheel needs exactly '));
+    d.appendChild(createEl('strong', null, String(req)));
+    d.appendChild(document.createTextNode(' numbers.'));
+  } else {
+    d.appendChild(document.createTextNode('Your saved number sets are listed below. Tap '));
+    d.appendChild(createEl('strong', null, 'Use these numbers'));
+    d.appendChild(document.createTextNode(' on any set to load it into the wheel. Numbers appear in the order they were saved (most likely to least likely). If a set has more numbers than this wheel requires, the extras will turn orange — simply click them to remove until the count is exact.'));
+  }
+  return d;
+}
+
+// Builds one saved-set card entirely with DOM APIs.
+// s       — set object from play_sets_list
+// req     — wheel.requiredSelections (0 if no wheel loaded)
+function buildSavedCard(s, req) {
+  var nums = s.main_numbers ? s.main_numbers.slice().sort(function(a, b) { return a - b; }) : [];
+  var cnt  = nums.length;
+  var fitClass = '';
+  var fitLabel = '';
+  if (req > 0) {
+    if (cnt === req) {
+      fitClass = 'le-saved-card--exact';
+      fitLabel = '\u2714\ufe0f ' + cnt + ' numbers \u2014 exact fit';
+    } else if (cnt > req) {
+      fitClass = 'le-saved-card--over';
+      fitLabel = '\u26A0\ufe0f ' + cnt + ' numbers \u2014 ' + (cnt - req) + ' over (deselect the orange ones)';
+    } else {
+      fitClass = 'le-saved-card--short';
+      fitLabel = '\u2139\ufe0f ' + cnt + ' numbers \u2014 need ' + (req - cnt) + ' more from the grid';
+    }
+  } else {
+    fitLabel = cnt + ' numbers';
+  }
+
+  var card = createEl('div', 'le-saved-card' + (fitClass ? ' ' + fitClass : ''));
+  card.setAttribute('data-set-id', String(s.id || ''));
+
+  // ── header row (button + info column) ──
+  var header = createEl('div', 'le-saved-card-header');
+
+  var btn = createEl('button', 'le-saved-card-btn');
+  btn.type = 'button';
+  btn.setAttribute('aria-label', 'Use set ' + String(s.id || ''));
+  btn.textContent = '\u25B6 Use these numbers';
+  // Capture s and card by IIFE so each button owns its own closure.
+  (function(capturedS, capturedCard) {
+    btn.addEventListener('click', function() {
+      if (!wheel) {
+        setStatus('err', 'Please select a wheel system first, then use this button to load your numbers.');
+        return;
+      }
+      loadSavedSet(capturedS.main_numbers || [], capturedS.label || ('Set #' + capturedS.id));
+      // Highlight the active card; clear others.
+      if (dom.savedPanel) {
+        var allCards = dom.savedPanel.querySelectorAll('.le-saved-card');
+        for (var c = 0; c < allCards.length; c++) { allCards[c].style.outline = ''; }
+      }
+      capturedCard.style.outline = '3px solid rgba(32,201,151,.70)';
+    });
+  })(s, card);
+
+  var info = createEl('div', 'le-saved-card-info');
+
+  var ref = createEl('div', 'le-saved-card-ref', 'Set #' + String(s.id || ''));
+  if (s.date_saved) {
+    ref.appendChild(document.createTextNode(' \u00b7 ' + String(s.date_saved)));
+  }
+  info.appendChild(ref);
+
+  if (s.source_badge) { info.appendChild(createEl('div', 'le-saved-card-meta', String(s.source_badge))); }
+  if (s.notes)        { info.appendChild(createEl('div', 'le-saved-card-notes', String(s.notes))); }
+  info.appendChild(createEl('div', 'le-saved-card-fit', fitLabel));
+
+  header.appendChild(btn);
+  header.appendChild(info);
+  card.appendChild(header);
+
+  // ── numbers preview section (hidden by default) ──
+  var preview = createEl('div', 'le-saved-card-preview');
+  preview.style.display = 'none';
+  preview.appendChild(createEl('div', 'le-saved-card-nums', nums.length ? nums.join(', ') : '\u2014'));
+  card.appendChild(preview);
+
+  // ── toggle button ──
+  var toggle = createEl('button', 'le-saved-card-preview-toggle');
+  toggle.type = 'button';
+  toggle.textContent = '\u25BC Show numbers';
+  (function(capturedPreview, capturedToggle) {
+    capturedToggle.addEventListener('click', function() {
+      var hidden = capturedPreview.style.display === 'none';
+      capturedPreview.style.display = hidden ? '' : 'none';
+      capturedToggle.textContent = hidden ? '\u25B2 Hide numbers' : '\u25BC Show numbers';
+    });
+  })(preview, toggle);
+  card.appendChild(toggle);
+
+  return card;
+}
+
 /**
- * Shows a static "not connected" state in the saved sets panel when no
- * MyLottoExpert endpoint URL was found in the page URL.  No HTTP request
- * is made — this prevents 404 errors on direct navigation.
+ * Central panel renderer.  Reads __panelState / __panelSets / __panelError /
+ * __wheelReady and rebuilds the panel from scratch using DOM APIs only.
+ * Called whenever any of those state variables changes.
  */
-function showSavedSetsNotConnected() {
+function renderSavedPanel() {
   if (!dom.savedPanel) { return; }
   dom.savedPanel.style.display = '';
-  dom.savedPanel.innerHTML =
-    '<div class="le-saved-panel-head">\uD83C\uDFAF Your Saved Numbers to Play</div>' +
-    '<div class="le-saved-instr">To load your saved number sets here automatically, go to <strong>MyLottoExpert \u2192 Numbers to Play</strong> and click <strong>\u201cOpen in Wheel Builder\u201d</strong> on the set you want to use. Your numbers will appear in this panel instantly.</div>' +
-    '<div class="le-saved-not-connected">Not connected to MyLottoExpert \u2014 no saved sets to display.</div>';
+  clearNode(dom.savedPanel);  // wipe previous content without innerHTML
+
+  var req = wheel ? (parseInt(wheel.requiredSelections, 10) || 0) : 0;
+
+  // ── not_connected ──
+  if (__panelState === 'not_connected') {
+    dom.savedPanel.appendChild(buildSavedPanelHeader());
+    var instrNC = createEl('div', 'le-saved-instr');
+    instrNC.appendChild(document.createTextNode('To load your saved number sets here automatically, go to '));
+    instrNC.appendChild(createEl('strong', null, 'MyLottoExpert \u2192 Numbers to Play'));
+    instrNC.appendChild(document.createTextNode(' and click '));
+    instrNC.appendChild(createEl('strong', null, '\u201cOpen in Wheel Builder\u201d'));
+    instrNC.appendChild(document.createTextNode(' on the set you want to use. Your numbers will appear in this panel instantly.'));
+    dom.savedPanel.appendChild(instrNC);
+    dom.savedPanel.appendChild(createEl('div', 'le-saved-not-connected', 'Not connected to MyLottoExpert \u2014 no saved sets to display.'));
+    return;
+  }
+
+  // ── loading ──
+  if (__panelState === 'loading') {
+    dom.savedPanel.appendChild(buildSavedPanelHeader());
+    dom.savedPanel.appendChild(buildSavedPanelInstructions(req));
+    dom.savedPanel.appendChild(createEl('div', 'le-saved-empty', 'Loading your saved sets\u2026'));
+    return;
+  }
+
+  // ── error ──
+  if (__panelState === 'error') {
+    dom.savedPanel.appendChild(buildSavedPanelHeader());
+    dom.savedPanel.appendChild(createEl('div', 'le-saved-empty', 'Could not load your saved sets: ' + __panelError));
+    return;
+  }
+
+  // ── ready ──
+  if (__panelState === 'ready') {
+    dom.savedPanel.appendChild(buildSavedPanelHeader());
+    var sets = __panelSets || [];
+
+    if (!__wheelReady) {
+      // No wheel loaded yet — show a contextual warning so the button makes sense.
+      dom.savedPanel.appendChild(createEl('div', 'le-saved-no-wheel', '\u26A0\ufe0f Select a wheel system first (Step 2 on the right), then click \u201cUse these numbers\u201d on any set below to load it.'));
+    } else {
+      dom.savedPanel.appendChild(buildSavedPanelInstructions(req));
+    }
+
+    if (!sets.length) {
+      dom.savedPanel.appendChild(createEl('div', 'le-saved-empty', 'No saved number sets found. Save a set from MyLottoExpert, then come back here.'));
+      return;
+    }
+
+    var cardsWrap = createEl('div', 'le-saved-cards');
+    for (var i = 0; i < sets.length; i++) {
+      cardsWrap.appendChild(buildSavedCard(sets[i], req));
+    }
+    dom.savedPanel.appendChild(cardsWrap);
+
+    // Auto-apply once — only when wheel is ready and a specific set was requested.
+    if (__panelAutoId > 0 && __wheelReady) {
+      for (var k = 0; k < sets.length; k++) {
+        if (sets[k].id === __panelAutoId) {
+          loadSavedSet(sets[k].main_numbers || [], sets[k].label || ('Set #' + sets[k].id));
+          break;
+        }
+      }
+      __panelAutoId = 0; // consumed; prevent re-applying on any future re-render
+    }
+  }
+}
+
+function showSavedSetsNotConnected() {
+  __panelState = 'not_connected';
+  renderSavedPanel();
 }
 
 /**
  * Fetches the list of saved Numbers to Play sets from the MyLottoExpert
- * endpoint and delegates rendering to renderSavedSetsPanel().
+ * endpoint and drives the panel through loading -> ready / error states.
  *
  * @param {string} endpoint  URL of the play_sets_list JSON endpoint.
  * @param {number} autoSetId play_set_id to auto-apply after the list loads (0 = none).
@@ -1278,142 +1498,22 @@ function fetchAndRenderSavedSets(endpoint, autoSetId) {
   if (!dom.savedPanel) { return; }
   if (!isSameOriginUrl(endpoint)) { return; }
 
-  dom.savedPanel.style.display = '';
-  dom.savedPanel.innerHTML =
-    '<div class="le-saved-panel-head">\uD83C\uDFAF Your Saved Numbers to Play</div>' +
-    '<div class="le-saved-instr">Your saved number sets are listed below. Tap <strong>Use these numbers</strong> on any set to load it into the wheel. Numbers appear in the order they were saved (most likely to least likely). If a set has more numbers than this wheel requires, the extras will turn orange \u2014 simply click them to remove until the count is exact.</div>' +
-    '<div class="le-saved-empty">Loading your saved sets\u2026</div>';
+  __panelAutoId = autoSetId || 0;
+  __panelState  = 'loading';
+  renderSavedPanel();
 
   fetchJson(endpoint).then(function(j) {
     if (!j || !j.ok || !Array.isArray(j.sets)) {
       throw new Error((j && j.error) ? String(j.error) : 'Could not load saved sets.');
     }
-    renderSavedSetsPanel(j.sets, autoSetId);
+    __panelSets  = j.sets;
+    __panelState = 'ready';
+    renderSavedPanel();
   }).catch(function(err) {
-    dom.savedPanel.innerHTML =
-      '<div class="le-saved-panel-head">\uD83C\uDFAF Your Saved Numbers to Play</div>' +
-      '<div class="le-saved-empty">Could not load your saved sets: ' +
-      escHtml(String(err && err.message ? err.message : err)) + '</div>';
+    __panelError = String(err && err.message ? err.message : err);
+    __panelState = 'error';
+    renderSavedPanel();
   });
-}
-
-/**
- * Renders the saved-sets panel from a list of set objects returned by
- * play_sets_list, then optionally auto-applies one set by ID.
- *
- * @param {Array}  sets      Array of play-set objects from MyLottoExpert.
- * @param {number} autoSetId ID of the set to auto-apply (0 = none).
- */
-function renderSavedSetsPanel(sets, autoSetId) {
-  if (!dom.savedPanel) { return; }
-
-  var req = wheel ? (parseInt(wheel.requiredSelections, 10) || 0) : 0;
-
-  var html = '<div class="le-saved-panel-head">\uD83C\uDFAF Your Saved Numbers to Play</div>';
-
-  // Warn when no wheel is loaded yet so the button click makes sense.
-  if (!wheel) {
-    html += '<div class="le-saved-no-wheel">\u26A0\ufe0f Select a wheel system first (Step 2 on the right), then click \u201cUse these numbers\u201d on any set below to load it.</div>';
-  } else {
-    html += '<div class="le-saved-instr">Click <strong>Use these numbers</strong> on any set to load it into the grid.' +
-            ' This wheel needs exactly <strong>' + req + '</strong> numbers.</div>';
-  }
-
-  if (!sets || !sets.length) {
-    html += '<div class="le-saved-empty">No saved number sets found. Save a set from MyLottoExpert, then come back here.</div>';
-    dom.savedPanel.innerHTML = html;
-    return;
-  }
-
-  html += '<div class="le-saved-cards">';
-  for (var i = 0; i < sets.length; i++) {
-    var s    = sets[i];
-    var nums = s.main_numbers ? s.main_numbers.slice().sort(function(a,b){ return a - b; }) : [];
-    var cnt  = nums.length;
-    var fitClass = '';
-    var fitLabel = '';
-    if (req > 0) {
-      if (cnt === req) {
-        fitClass = 'le-saved-card--exact';
-        fitLabel = '\u2714\ufe0f ' + cnt + ' numbers \u2014 exact fit';
-      } else if (cnt > req) {
-        fitClass = 'le-saved-card--over';
-        fitLabel = '\u26A0\ufe0f ' + cnt + ' numbers \u2014 ' + (cnt - req) + ' over (deselect the orange ones)';
-      } else {
-        fitClass = 'le-saved-card--short';
-        fitLabel = '\u2139\ufe0f ' + cnt + ' numbers \u2014 need ' + (req - cnt) + ' more from the grid';
-      }
-    } else {
-      fitLabel = cnt + ' numbers';
-    }
-    var numList = nums.length ? nums.join(', ') : '\u2014';
-    var previewId = 'le-nums-preview-' + i;
-
-    html += '<div class="le-saved-card ' + fitClass + '" data-set-id="' + escHtml(String(s.id)) + '" style="border:1px solid rgba(10,26,51,.15);border-radius:12px;background:#fff;overflow:hidden;margin-bottom:0;">';
-    html += '<div class="le-saved-card-header" style="display:flex;align-items:center;gap:10px;padding:10px 12px;">';
-    html += '<button class="le-saved-card-btn" type="button" data-set-idx="' + i + '" aria-label="Use set ' + escHtml(String(s.id)) + '" style="flex-shrink:0;appearance:none;-webkit-appearance:none;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:800;cursor:pointer;background:#1C66FF;color:#fff;min-height:34px;white-space:nowrap;">\u25B6 Use these numbers</button>';
-    html += '<div class="le-saved-card-info" style="flex:1;min-width:0;">';
-    html += '<div class="le-saved-card-ref" style="font-weight:800;font-size:13px;color:#0A1A33;">Set #' + escHtml(String(s.id)) + (s.date_saved ? ' \u00b7 ' + escHtml(s.date_saved) : '') + '</div>';
-    if (s.source_badge) { html += '<div class="le-saved-card-meta" style="font-size:11px;color:#5B6B86;">' + escHtml(s.source_badge) + '</div>'; }
-    if (s.notes) { html += '<div class="le-saved-card-notes" style="font-size:11px;color:#5B6B86;font-style:italic;">' + escHtml(s.notes) + '</div>'; }
-    html += '<div class="le-saved-card-fit" style="font-size:11px;font-weight:700;color:#0A1A33;margin-top:2px;">' + fitLabel + '</div>';
-    html += '</div>'; // .le-saved-card-info
-    html += '</div>'; // .le-saved-card-header
-    // Numbers collapsed by default; toggle shows them
-    html += '<div class="le-saved-card-preview" style="display:none;padding:0 12px 10px;border-top:1px solid rgba(10,26,51,.07);" id="' + previewId + '">';
-    html += '<div class="le-saved-card-nums" style="font-size:12px;color:#334155;line-height:1.6;word-break:break-word;padding:6px 8px;background:rgba(10,26,51,.04);border-radius:6px;">' + escHtml(numList) + '</div>';
-    html += '</div>';
-    html += '<button class="le-saved-card-preview-toggle" type="button" data-preview-id="' + previewId + '" style="background:none;border:none;padding:0 12px 8px;font-size:11px;color:#1C66FF;cursor:pointer;display:block;">\u25BC Show numbers</button>';
-    html += '</div>'; // .le-saved-card
-  }
-  html += '</div>';
-
-  dom.savedPanel.innerHTML = html;
-
-  // Wire the "Use these numbers" buttons.
-  var btns = dom.savedPanel.querySelectorAll('[data-set-idx]');
-  for (var b = 0; b < btns.length; b++) {
-    (function(idx) {
-      btns[idx].addEventListener('click', function() {
-        if (!wheel) {
-          setStatus('err', 'Please select a wheel system first, then use this button to load your numbers.');
-          return;
-        }
-        var s2 = sets[idx];
-        loadSavedSet(s2.main_numbers || [], s2.label || ('Set #' + s2.id));
-        // Highlight the active card briefly
-        var cards = dom.savedPanel.querySelectorAll('.le-saved-card');
-        for (var c = 0; c < cards.length; c++) { cards[c].style.outline = ''; }
-        if (btns[idx].closest) {
-          var card = btns[idx].closest('.le-saved-card');
-          if (card) { card.style.outline = '3px solid rgba(32,201,151,.70)'; }
-        }
-      });
-    })(parseInt(btns[b].getAttribute('data-set-idx'), 10));
-  }
-
-  // Wire the "Show/Hide numbers" preview toggles.
-  var toggles = dom.savedPanel.querySelectorAll('[data-preview-id]');
-  for (var t = 0; t < toggles.length; t++) {
-    toggles[t].addEventListener('click', function() {
-      var pid = this.getAttribute('data-preview-id');
-      var preview = document.getElementById(pid);
-      if (!preview) { return; }
-      var hidden = preview.style.display === 'none';
-      preview.style.display = hidden ? '' : 'none';
-      this.textContent = hidden ? '\u25B2 Hide numbers' : '\u25BC Show numbers';
-    });
-  }
-
-  // Auto-apply the pre-selected set when specified (e.g. from MLE's "Open in Wheel Builder").
-  if (autoSetId > 0) {
-    for (var k = 0; k < sets.length; k++) {
-      if (sets[k].id === autoSetId) {
-        loadSavedSet(sets[k].main_numbers || [], sets[k].label || ('Set #' + sets[k].id));
-        break;
-      }
-    }
-  }
 }
 
 function wireButtons(){
@@ -1513,9 +1613,9 @@ function loadWheelFromJson(sysId){
     updateSelectionUI();
     syncPrintHeader();
 
-    // [[SAVED_SETS]] Wheel is now known — fetch and render the saved sets panel
-    // once, with correct fit badges. Panel is never shown before this point
-    // when a system_id is present, so there is no earlier render to conflict with.
+    // Wheel data is now known. Mark panel as wheel-ready so renderSavedPanel()
+    // shows correct fit badges, then fetch/render the saved sets once.
+    __wheelReady = true;
     if (__playSetsEndpoint) {
       setStatus('ok', 'Wheel loaded. Loading your saved number sets\u2026');
       fetchAndRenderSavedSets(__playSetsEndpoint, __autoSelectPlaySetId);
