@@ -167,6 +167,7 @@ textarea{ min-height:92px; resize:vertical; }
 .le-results{
   max-height:560px;
   overflow:auto;
+  -webkit-overflow-scrolling:touch;
   border:1px solid var(--border);
   border-radius:var(--r16);
   background:#fff;
@@ -196,6 +197,10 @@ textarea{ min-height:92px; resize:vertical; }
 .le-table th,.le-table td{ padding:12px 12px; border-bottom:1px solid rgba(10,26,51,.08); vertical-align:middle; }
 .le-table th{ position:sticky; top:0; background:#fff; z-index:1; text-align:left; font-weight:900; color:var(--deep-navy); }
 .le-table td:last-child{ text-align:right; }
+@media (max-width:640px){
+  .le-table{ font-size:11px; }
+  .le-table th,.le-table td{ padding:8px 8px; }
+}
 
 .le-print-header{ display:none; }
 
@@ -294,59 +299,90 @@ textarea{ min-height:92px; resize:vertical; }
   border-radius:10px;
   border:1px solid rgba(28,102,255,.12);
 }
-.le-saved-cards{ display:flex; flex-direction:column; gap:8px; max-height:340px; overflow-y:auto; padding-right:4px; }
+.le-saved-cards{ display:flex; flex-direction:column; gap:10px; }
 .le-saved-card{
   border:1px solid var(--border);
   border-radius:var(--r12);
-  padding:10px 12px;
   background:var(--sky-gray);
+  overflow:hidden;
   transition:border-color .12s;
 }
 .le-saved-card:hover{ border-color:rgba(28,102,255,.45); }
 .le-saved-card--exact{ border-color:rgba(32,201,151,.55); background:rgba(32,201,151,.06); }
 .le-saved-card--over{ border-color:rgba(234,88,12,.40); background:rgba(234,88,12,.05); }
 .le-saved-card--short{ border-color:rgba(28,102,255,.30); }
+/* Card header row: button left, ref info right */
+.le-saved-card-header{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+}
+.le-saved-card-btn{
+  flex-shrink:0;
+  appearance:none;
+  border:none;
+  border-radius:8px;
+  padding:7px 14px;
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+  background:var(--skai-blue);
+  color:#fff;
+  transition:background .12s, box-shadow .12s;
+  min-height:34px;
+  white-space:nowrap;
+}
+.le-saved-card-btn:hover{ background:#1553d4; box-shadow:0 2px 8px rgba(28,102,255,.30); }
+.le-saved-card-btn:focus{ outline:3px solid rgba(28,102,255,.30); outline-offset:2px; }
+.le-saved-card-info{ flex:1; min-width:0; }
 .le-saved-card-ref{
   font-weight:800;
   font-size:13px;
   color:var(--deep-navy);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
-.le-saved-card-meta{ font-size:11px; color:var(--text-muted); margin-top:2px; }
-.le-saved-card-notes{
-  font-size:12px;
-  color:var(--text);
-  margin-top:4px;
-  font-style:italic;
+.le-saved-card-meta{ font-size:11px; color:var(--text-muted); margin-top:1px; }
+.le-saved-card-notes{ font-size:11px; color:var(--text-muted); margin-top:1px; font-style:italic; }
+.le-saved-card-fit{ font-size:11px; font-weight:700; color:var(--deep-navy); margin-top:2px; }
+/* Numbers preview — hidden by default, toggled by JS */
+.le-saved-card-preview{
+  padding:0 12px 10px;
+  border-top:1px solid rgba(10,26,51,.07);
 }
-.le-saved-card-fit{ font-size:11px; font-weight:700; color:var(--deep-navy); margin-top:4px; margin-bottom:6px; }
+.le-saved-card-preview-toggle{
+  appearance:none;
+  background:none;
+  border:none;
+  padding:0;
+  font-size:11px;
+  color:var(--skai-blue);
+  cursor:pointer;
+  margin-bottom:4px;
+  margin-top:6px;
+  display:block;
+}
 .le-saved-card-nums{
   font-size:12px;
   color:#334155;
   line-height:1.6;
   word-break:break-word;
-  margin-bottom:8px;
   padding:6px 8px;
   background:rgba(10,26,51,.04);
   border-radius:6px;
 }
-.le-saved-card-btn{
-  display:block;
-  width:100%;
-  appearance:none;
-  border:1px solid rgba(28,102,255,.55);
-  border-radius:10px;
-  padding:6px 13px;
+/* No-wheel-loaded warning inside panel */
+.le-saved-no-wheel{
   font-size:12px;
-  font-weight:800;
-  cursor:pointer;
-  background:#fff;
-  color:var(--skai-blue);
-  transition:background .12s, color .12s;
-  min-height:30px;
-  text-align:center;
+  color:#92400e;
+  background:#fffbeb;
+  border:1px solid #fcd34d;
+  border-radius:8px;
+  padding:8px 12px;
+  margin-bottom:8px;
 }
-.le-saved-card-btn:hover{ background:var(--skai-blue); color:#fff; }
-.le-saved-card-btn:focus{ outline:3px solid rgba(28,102,255,.30); outline-offset:2px; }
 .le-saved-empty{ font-size:13px; color:var(--text-muted); }
 .le-saved-not-connected{
   font-size:12px;
@@ -1278,12 +1314,17 @@ function renderSavedSetsPanel(sets, autoSetId) {
   var req = wheel ? (parseInt(wheel.requiredSelections, 10) || 0) : 0;
 
   var html = '<div class="le-saved-panel-head">\uD83C\uDFAF Your Saved Numbers to Play</div>';
-  html += '<div class="le-saved-instr">Click <strong>Use these numbers</strong> on any set below to load it into the wheel.';
-  if (req > 0) { html += ' This wheel needs exactly <strong>' + req + '</strong> numbers.'; }
-  html += '</div>';
+
+  // Warn when no wheel is loaded yet so the button click makes sense.
+  if (!wheel) {
+    html += '<div class="le-saved-no-wheel">\u26A0\ufe0f Select a wheel system first (Step 2 on the right), then click \u201cUse these numbers\u201d on any set below to load it.</div>';
+  } else {
+    html += '<div class="le-saved-instr">Click <strong>Use these numbers</strong> on any set to load it into the grid.' +
+            ' This wheel needs exactly <strong>' + req + '</strong> numbers.</div>';
+  }
 
   if (!sets || !sets.length) {
-    html += '<div class="le-saved-empty">No saved number sets found. Use the Strategy Builder or save directly from a prediction in MyLottoExpert, then come back here.</div>';
+    html += '<div class="le-saved-empty">No saved number sets found. Save a set from MyLottoExpert, then come back here.</div>';
     dom.savedPanel.innerHTML = html;
     return;
   }
@@ -1298,7 +1339,7 @@ function renderSavedSetsPanel(sets, autoSetId) {
     if (req > 0) {
       if (cnt === req) {
         fitClass = 'le-saved-card--exact';
-        fitLabel = '\u2714\ufe0f Exact fit \u2014 ' + cnt + ' numbers';
+        fitLabel = '\u2714\ufe0f ' + cnt + ' numbers \u2014 exact fit';
       } else if (cnt > req) {
         fitClass = 'le-saved-card--over';
         fitLabel = '\u26A0\ufe0f ' + cnt + ' numbers \u2014 ' + (cnt - req) + ' over (deselect the orange ones)';
@@ -1310,15 +1351,24 @@ function renderSavedSetsPanel(sets, autoSetId) {
       fitLabel = cnt + ' numbers';
     }
     var numList = nums.length ? nums.join(', ') : '\u2014';
+    var previewId = 'le-nums-preview-' + i;
 
     html += '<div class="le-saved-card ' + fitClass + '" data-set-id="' + escHtml(String(s.id)) + '">';
+    html += '<div class="le-saved-card-header">';
+    html += '<button class="le-saved-card-btn" type="button" data-set-idx="' + i + '" aria-label="Use set ' + escHtml(String(s.id)) + '">\u25B6 Use these numbers</button>';
+    html += '<div class="le-saved-card-info">';
     html += '<div class="le-saved-card-ref">Set #' + escHtml(String(s.id)) + (s.date_saved ? ' \u00b7 ' + escHtml(s.date_saved) : '') + '</div>';
     if (s.source_badge) { html += '<div class="le-saved-card-meta">' + escHtml(s.source_badge) + '</div>'; }
     if (s.notes) { html += '<div class="le-saved-card-notes">' + escHtml(s.notes) + '</div>'; }
     html += '<div class="le-saved-card-fit">' + fitLabel + '</div>';
+    html += '</div>'; // .le-saved-card-info
+    html += '</div>'; // .le-saved-card-header
+    // Numbers collapsed by default; toggle shows them
+    html += '<div class="le-saved-card-preview" style="display:none;" id="' + previewId + '">';
     html += '<div class="le-saved-card-nums">' + escHtml(numList) + '</div>';
-    html += '<button class="le-saved-card-btn" type="button" data-set-idx="' + i + '" aria-label="Use set ' + escHtml(String(s.id)) + '">Use these numbers</button>';
     html += '</div>';
+    html += '<button class="le-saved-card-preview-toggle" type="button" data-preview-id="' + previewId + '" style="margin:0 12px 8px;">\u25BC Show numbers</button>';
+    html += '</div>'; // .le-saved-card
   }
   html += '</div>';
 
@@ -1329,10 +1379,34 @@ function renderSavedSetsPanel(sets, autoSetId) {
   for (var b = 0; b < btns.length; b++) {
     (function(idx) {
       btns[idx].addEventListener('click', function() {
+        if (!wheel) {
+          setStatus('err', 'Please select a wheel system first, then use this button to load your numbers.');
+          return;
+        }
         var s2 = sets[idx];
         loadSavedSet(s2.main_numbers || [], s2.label || ('Set #' + s2.id));
+        // Highlight the active card briefly
+        var cards = dom.savedPanel.querySelectorAll('.le-saved-card');
+        for (var c = 0; c < cards.length; c++) { cards[c].style.outline = ''; }
+        if (btns[idx].closest) {
+          var card = btns[idx].closest('.le-saved-card');
+          if (card) { card.style.outline = '3px solid rgba(32,201,151,.70)'; }
+        }
       });
     })(parseInt(btns[b].getAttribute('data-set-idx'), 10));
+  }
+
+  // Wire the "Show/Hide numbers" preview toggles.
+  var toggles = dom.savedPanel.querySelectorAll('[data-preview-id]');
+  for (var t = 0; t < toggles.length; t++) {
+    toggles[t].addEventListener('click', function() {
+      var pid = this.getAttribute('data-preview-id');
+      var preview = document.getElementById(pid);
+      if (!preview) { return; }
+      var hidden = preview.style.display === 'none';
+      preview.style.display = hidden ? '' : 'none';
+      this.textContent = hidden ? '\u25B2 Hide numbers' : '\u25BC Show numbers';
+    });
   }
 
   // Auto-apply the pre-selected set when specified (e.g. from MLE's "Open in Wheel Builder").
