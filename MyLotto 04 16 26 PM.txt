@@ -3312,7 +3312,7 @@ if ($__sendPlayToWheel > 0) {
                 }
             }
 
-            $__wheelUrl = '/wheel-builder1?play_set_id=' . (int)$__playId . '&source=mylottoexpert';
+            $__wheelUrl = '/all-wheeling-systems?play_set_id=' . (int)$__playId . '&source=mylottoexpert';
             if ($__systemId > 0) {
                 $__wheelUrl .= '&system_id=' . (int)$__systemId;
             }
@@ -8989,7 +8989,7 @@ if (!empty($__mleMessages)): ?>
         <div class="mle-start-here__step-num">3</div>
         <div class="mle-start-here__step-body">
           <strong>Approve your Numbers to Play</strong>
-          <span>Use the strategy area to refine your numbers, save your final set into Numbers to Play, then open it in Wheel Builder to apply your selected wheel and generate combinations.</span>
+          <span>Use the strategy area to refine your numbers, save your final set into Numbers to Play, then go to the <a href="/all-wheeling-systems" style="color:#1d4ed8;text-decoration:underline;">Wheeling Systems Library</a> to pick a wheel and generate combinations.</span>
         </div>
       </div>
 
@@ -14133,7 +14133,7 @@ $methodKeys = ['skip_hit','ai_prediction','mcmc_prediction','skai_prediction','h
               Numbers selected: <span data-sw-count-mains>0</span><?php if ($__swHasExtra): ?>&nbsp;&bull;&nbsp;<?php echo htmlspecialchars($__swExtraLabel, ENT_QUOTES); ?>: <span data-sw-count-extras>0</span><?php endif; ?>
             </div>
             <div style="font-size:0.88rem; color:#576574; margin:0.35rem 0 0.65rem;">
-              Build your number set here, then save it to Numbers to Play. Open in Wheel Builder when you are ready to apply a wheel and generate combinations.
+              Build your number set here, then save it to Numbers to Play. Go to the <a href="/all-wheeling-systems" style="color:#1d4ed8;text-decoration:underline;">Wheeling Systems Library</a> when you are ready to pick a wheel and generate combinations.
             </div>
             <div class="sw-builder-pool" data-sw-pool aria-label="Your strategy numbers">
               <div class="sw-pool-empty" data-sw-pool-empty>Click a candidate above to add numbers here.</div>
@@ -17233,7 +17233,7 @@ if (!empty($settingLabels)) {
 <div class="mle-play-section" id="numbers-to-play">
   <div class="mle-play-section__head">
     <h2 class="mle-play-section__title">Numbers to Play</h2>
-    <p class="mle-play-section__sub">Your saved number sets for wheeling and final play decisions. Save from predictions, the strategy builder, or manual custom selection. When your set is ready, open it in Wheel Builder to apply your selected wheel and generate combinations.</p>
+    <p class="mle-play-section__sub">Your saved number sets for wheeling and final play decisions. Save from predictions, the strategy builder, or manual custom selection. When your set is ready, go to the <a href="/all-wheeling-systems" style="color:#1d4ed8;text-decoration:underline;">Wheeling Systems Library</a> to pick a wheel and generate combinations.</p>
   </div>
 
   <?php if (!empty($playSets)): ?>
@@ -17251,67 +17251,67 @@ if (!empty($settingLabels)) {
       $__playWheelCount = (int)($__play->wheel_export_count ?? 0);
       $__playNotes = trim((string)($__play->play_notes ?? ''));
     ?>
-    <div class="mle-play-card">
-      <div class="mle-play-top">
-        <span class="mle-play-label"><?php echo htmlspecialchars($__playLabel, ENT_QUOTES, 'UTF-8'); ?></span>
-        <span class="mle-play-badge"><?php echo htmlspecialchars($__playBadge, ENT_QUOTES, 'UTF-8'); ?></span>
+    <div class="mle-play-card" style="border:1px solid #dce6f6;border-radius:14px;background:#fff;padding:0.85rem;margin-bottom:0;">
+      <div class="mle-play-top" style="display:flex;flex-wrap:wrap;align-items:center;gap:0.45rem;margin-bottom:0.5rem;">
+        <span class="mle-play-label" style="font-weight:800;color:#0f274d;"><?php echo htmlspecialchars($__playLabel, ENT_QUOTES, 'UTF-8'); ?></span>
+        <span class="mle-play-badge" style="display:inline-block;border:1px solid #b7cff8;background:#edf4ff;color:#1d4ed8;border-radius:999px;padding:2px 9px;font-size:0.72rem;font-weight:700;"><?php echo htmlspecialchars($__playBadge, ENT_QUOTES, 'UTF-8'); ?></span>
         <?php if (!empty($__playMeta['play_status'])): ?>
-          <span class="mle-play-badge"><?php echo htmlspecialchars(ucfirst($__playMeta['play_status']), ENT_QUOTES, 'UTF-8'); ?></span>
+          <span class="mle-play-badge" style="display:inline-block;border:1px solid #b7cff8;background:#edf4ff;color:#1d4ed8;border-radius:999px;padding:2px 9px;font-size:0.72rem;font-weight:700;"><?php echo htmlspecialchars(ucfirst($__playMeta['play_status']), ENT_QUOTES, 'UTF-8'); ?></span>
         <?php endif; ?>
       </div>
-      <div class="mle-play-meta">
+      <div class="mle-play-meta" style="font-size:0.82rem;color:#60708a;">
         <?php echo htmlspecialchars((string)($__play->lottery_name ?? 'Lottery'), ENT_QUOTES, 'UTF-8'); ?>
         <?php if ($__playDrawLabel !== ''): ?> | Draw: <?php echo htmlspecialchars($__playDrawLabel, ENT_QUOTES, 'UTF-8'); ?><?php endif; ?>
         <?php if ($__playSavedLabel !== ''): ?> | Saved: <?php echo htmlspecialchars($__playSavedLabel, ENT_QUOTES, 'UTF-8'); ?><?php endif; ?>
-        <?php if ($__playWheelCount > 0): ?> | Sent to Wheel Builder: <?php echo (int)$__playWheelCount; ?><?php endif; ?>
+        <?php if ($__playWheelCount > 0): ?> | Sent to Wheeling Systems: <?php echo (int)$__playWheelCount; ?><?php endif; ?>
       </div>
-      <div class="mle-play-row"><strong>Main numbers:</strong> <?php echo htmlspecialchars(!empty($__playMain) ? implode(', ', $__playMain) : '-', ENT_QUOTES, 'UTF-8'); ?></div>
+      <div class="mle-play-row" style="margin-top:0.35rem;font-size:0.9rem;color:#1e293b;line-height:1.45;"><strong>Main numbers:</strong> <?php echo htmlspecialchars(!empty($__playMain) ? implode(', ', $__playMain) : '-', ENT_QUOTES, 'UTF-8'); ?></div>
       <?php if (!empty($__playExtra)): ?>
-      <div class="mle-play-row"><strong>Extra numbers:</strong> <?php echo htmlspecialchars(implode(', ', $__playExtra), ENT_QUOTES, 'UTF-8'); ?></div>
+      <div class="mle-play-row" style="margin-top:0.35rem;font-size:0.9rem;color:#1e293b;line-height:1.45;"><strong>Extra numbers:</strong> <?php echo htmlspecialchars(implode(', ', $__playExtra), ENT_QUOTES, 'UTF-8'); ?></div>
       <?php endif; ?>
 
-      <div class="mle-play-actions">
-        <form method="post">
+      <div class="mle-play-actions" style="display:flex;flex-wrap:wrap;gap:0.45rem;margin-top:0.75rem;align-items:flex-start;">
+        <form method="post" style="display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;margin:0;">
           <?php echo \Joomla\CMS\HTML\HTMLHelper::_('form.token'); ?>
           <input type="hidden" name="update_play_entry" value="1">
           <input type="hidden" name="play_set_id" value="<?php echo (int)$__play->id; ?>">
-          <input class="mle-play-input" type="text" name="play_label" maxlength="80" value="<?php echo htmlspecialchars($__playLabel, ENT_QUOTES, 'UTF-8'); ?>" aria-label="Edit play set label">
-          <input class="mle-play-input" type="text" name="play_notes" maxlength="1000" value="<?php echo htmlspecialchars($__playNotes, ENT_QUOTES, 'UTF-8'); ?>" placeholder="Optional notes" aria-label="Edit play notes">
-          <button type="submit" class="btn-secondary" style="font-size:0.78rem;">&#x1F4BE; Save</button>
+          <input class="mle-play-input" type="text" name="play_label" maxlength="80" value="<?php echo htmlspecialchars($__playLabel, ENT_QUOTES, 'UTF-8'); ?>" aria-label="Edit play set label" style="padding:0.35rem 0.5rem;border:1px solid #cdd8eb;border-radius:8px;font-size:0.78rem;min-width:120px;">
+          <input class="mle-play-input" type="text" name="play_notes" maxlength="1000" value="<?php echo htmlspecialchars($__playNotes, ENT_QUOTES, 'UTF-8'); ?>" placeholder="Optional notes" aria-label="Edit play notes" style="padding:0.35rem 0.5rem;border:1px solid #cdd8eb;border-radius:8px;font-size:0.78rem;min-width:140px;">
+          <button type="submit" class="btn-secondary" style="font-size:0.78rem;padding:0.35rem 0.75rem;border-radius:8px;cursor:pointer;white-space:nowrap;">&#x1F4BE; Save</button>
         </form>
 
-        <form method="post">
+        <form method="post" style="margin:0;">
           <?php echo \Joomla\CMS\HTML\HTMLHelper::_('form.token'); ?>
           <input type="hidden" name="duplicate_play_entry" value="1">
           <input type="hidden" name="play_set_id" value="<?php echo (int)$__play->id; ?>">
-          <button type="submit" class="btn-secondary" style="font-size:0.78rem;">Duplicate</button>
+          <button type="submit" class="btn-secondary" style="font-size:0.78rem;padding:0.35rem 0.75rem;border-radius:8px;cursor:pointer;white-space:nowrap;">Duplicate</button>
         </form>
 
-        <form method="post">
+        <form method="post" style="display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;margin:0;">
           <?php echo \Joomla\CMS\HTML\HTMLHelper::_('form.token'); ?>
           <input type="hidden" name="send_play_to_wheel" value="1">
           <input type="hidden" name="play_set_id" value="<?php echo (int)$__play->id; ?>">
-          <select name="play_system_id" class="mle-play-input" aria-label="Optional wheel system for send action">
-            <option value="0">No specific wheel yet (choose in Wheel Builder)</option>
+          <select name="play_system_id" class="mle-play-input" aria-label="Optional wheel system for send action" style="padding:0.35rem 0.5rem;border:1px solid #cdd8eb;border-radius:8px;font-size:0.78rem;">
+            <option value="0">No wheel chosen yet (browse Wheeling Systems Library)</option>
             <?php foreach ($wheelingSystems as $__wsOpt): ?>
               <option value="<?php echo (int)($__wsOpt['system_id'] ?? 0); ?>"><?php echo htmlspecialchars((string)($__wsOpt['name'] ?? ('System ' . (int)($__wsOpt['system_id'] ?? 0))), ENT_QUOTES, 'UTF-8'); ?></option>
             <?php endforeach; ?>
           </select>
-          <button type="submit" class="btn-primary" style="font-size:0.78rem;">Open in Wheel Builder</button>
+          <button type="submit" class="btn-primary" style="font-size:0.78rem;padding:0.35rem 0.75rem;border-radius:8px;cursor:pointer;white-space:nowrap;">&#x1F3AF; Go to Wheeling Systems Library</button>
         </form>
 
-        <form method="post">
+        <form method="post" style="margin:0;">
           <?php echo \Joomla\CMS\HTML\HTMLHelper::_('form.token'); ?>
           <input type="hidden" name="archive_play_entry" value="1">
           <input type="hidden" name="play_set_id" value="<?php echo (int)$__play->id; ?>">
-          <button type="submit" class="btn-secondary" style="font-size:0.78rem;">Archive</button>
+          <button type="submit" class="btn-secondary" style="font-size:0.78rem;padding:0.35rem 0.75rem;border-radius:8px;cursor:pointer;white-space:nowrap;">Archive</button>
         </form>
 
-        <form method="post" data-confirm-submit="Delete this Numbers to Play entry?">
+        <form method="post" data-confirm-submit="Delete this Numbers to Play entry?" style="margin:0;">
           <?php echo \Joomla\CMS\HTML\HTMLHelper::_('form.token'); ?>
           <input type="hidden" name="delete_play_entry" value="1">
           <input type="hidden" name="play_set_id" value="<?php echo (int)$__play->id; ?>">
-          <button type="submit" class="btn-danger" style="font-size:0.78rem;">Delete</button>
+          <button type="submit" class="btn-danger" style="font-size:0.78rem;padding:0.35rem 0.75rem;border-radius:8px;cursor:pointer;white-space:nowrap;">Delete</button>
         </form>
       </div>
     </div>
@@ -17319,7 +17319,7 @@ if (!empty($settingLabels)) {
   </div>
   <?php else: ?>
   <div class="mle-play-empty">
-    No saved number sets yet. Use the Strategy Builder to build and save a set, or save directly from a prediction run. Once saved, open in Wheel Builder to apply your selected wheel and generate combinations.
+    No saved number sets yet. Use the Strategy Builder to build and save a set, or save directly from a prediction run. Once saved, go to the <a href="/all-wheeling-systems" style="color:#1d4ed8;">Wheeling Systems Library</a> to pick a wheel and generate combinations.
   </div>
   <?php endif; ?>
 </div>
